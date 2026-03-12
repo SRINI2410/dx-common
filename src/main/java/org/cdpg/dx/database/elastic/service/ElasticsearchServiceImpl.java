@@ -39,6 +39,7 @@ import org.cdpg.dx.database.elastic.ElasticClient;
 import org.cdpg.dx.database.elastic.model.BulkScriptUpdate;
 import org.cdpg.dx.database.elastic.model.BulkSyncResult;
 import org.cdpg.dx.database.elastic.model.ElasticsearchResponse;
+import org.cdpg.dx.database.elastic.model.ElasticsearchSearchResult;
 import org.cdpg.dx.database.elastic.model.QueryModel;
 import org.cdpg.dx.database.elastic.model.ScrollResult;
 import org.elasticsearch.client.Request;
@@ -57,10 +58,9 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
   }
 
   @Override
-  public Future<List<ElasticsearchResponse>> search(
+  public Future<ElasticsearchSearchResult> search(
       String index, QueryModel queryModel, String options) {
-    // This is the interface method, does not support deep pagination
-    Promise<List<ElasticsearchResponse>> promise = Promise.promise();
+    Promise<ElasticsearchSearchResult> promise = Promise.promise();
     Map<String, Aggregation> aggregations = new HashMap<>();
     if (queryModel.getAggregations() != null) {
       queryModel
@@ -101,7 +101,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
               }
               try {
                 List<ElasticsearchResponse> esResponses = new ArrayList<>();
-                JsonObject aggregationsJson = new JsonObject();
+                int totalHitsCount = 0;
                 LOGGER.debug("Total :: {}", response.hits().hits().size());
                 // 1. Handle hits if needed
                 if (!options.startsWith(AGGREGATION_ONLY)) {
@@ -136,19 +136,15 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                     esResponses.add(new ElasticsearchResponse(id, result));
                   }
 
-                  long totalHits =
-                      response.hits().total() != null ? response.hits().total().value() : 0;
-                  ElasticsearchResponse.setTotalHits((int) totalHits);
+                  totalHitsCount =
+                      (int) (response.hits().total() != null ? response.hits().total().value() : 0);
                 }
 
                 // 2. Handle aggregations if needed
-                aggregationsJson = parseAggregations(response, options);
+                JsonObject aggregationsJson = parseAggregations(response, options);
 
-                if (!aggregationsJson.isEmpty()) {
-                  ElasticsearchResponse.setAggregations(aggregationsJson);
-                }
-
-                promise.complete(esResponses);
+                promise.complete(
+                    new ElasticsearchSearchResult(esResponses, totalHitsCount, aggregationsJson));
               } catch (Exception e) {
                 LOGGER.error("Failed to parse search response", e);
                 promise.fail(
@@ -568,7 +564,6 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
               if (err != null) {
                 promise.fail(new RuntimeException("Search error", err));
               } else if (resp.hits().total().value() == 0) {
-                ElasticsearchResponse.setTotalHits(0);
                 LOGGER.debug("No documents found ");
                 promise.complete(new ElasticsearchResponse());
               } else {
@@ -578,7 +573,6 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                 source.remove(SUMMARY_KEY);
                 ElasticsearchResponse response =
                     new ElasticsearchResponse(hit.id(), new JsonObject(source.toString()));
-                ElasticsearchResponse.setTotalHits((int) resp.hits().total().value());
                 promise.complete(response);
               }
             });
@@ -932,115 +926,4 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     return results;
   }
 
-  @Override
-  public Future<List<ElasticsearchResponse>> asyncScroll(String index, QueryModel queryModel) {
-    Promise<List<ElasticsearchResponse>> promise = Promise.promise();
-
-    try {
-      // Build initial search request with scroll
-      SearchRequest.Builder searchBuilder =
-          new SearchRequest.Builder()
-              .index(index)
-              .query(queryModel.toElasticsearchQuery())
-              .size(10000)
-              .scroll(scr -> scr.time("5m"));
-
-      if (queryModel.toSourceConfig() != null) {
-        searchBuilder.source(queryModel.toSourceConfig());
-      }
-
-      if (queryModel.toSortOptions() != null) {
-        searchBuilder.sort(queryModel.toSortOptions());
-      }
-
-      SearchRequest searchRequest = searchBuilder.build();
-
-      LOGGER.debug("Starting async scroll for index: {} with batch size: {}", index, 10000);
-
-      List<ElasticsearchResponse> allResults = new ArrayList<>();
-      AtomicReference<String> scrollIdRef = new AtomicReference<>();
-
-      asyncClient
-          .search(searchRequest, ObjectNode.class)
-          .whenComplete(
-              (initialResponse, initialError) -> {
-                if (initialError != null) {
-                  promise.fail(new RuntimeException("Initial search failed", initialError));
-                  return;
-                }
-
-                String scrollId = initialResponse.scrollId();
-                scrollIdRef.set(scrollId);
-                processHits(initialResponse.hits().hits(), allResults);
-                LOGGER.debug(
-                    "Retrieved {} docs in initial batch. Total so far: {}",
-                    initialResponse.hits().hits().size(),
-                    allResults.size());
-
-                // Continue scrolling recursively
-                continueScrolling(scrollId, allResults, promise);
-              });
-
-    } catch (Exception e) {
-      promise.fail(new RuntimeException("Failed to start scroll search", e));
-    }
-
-    return promise.future();
-  }
-
-  private void continueScrolling(
-      String scrollId,
-      List<ElasticsearchResponse> allResults,
-      Promise<List<ElasticsearchResponse>> promise) {
-    if (scrollId == null) {
-      LOGGER.debug("Scroll completed. Total documents retrieved: {}", allResults.size());
-      promise.complete(allResults);
-      return;
-    }
-
-    ScrollRequest scrollRequest =
-        ScrollRequest.of(s -> s.scrollId(scrollId).scroll(scr -> scr.time("5m")));
-
-    asyncClient
-        .scroll(scrollRequest, ObjectNode.class)
-        .whenComplete(
-            (scrollResponse, error) -> {
-              if (error != null) {
-                clearScroll(scrollId)
-                    .onComplete(
-                        clearResult -> {
-                          promise.fail(new RuntimeException("Scroll failed", error));
-                        });
-                return;
-              }
-
-              List<Hit<ObjectNode>> hits = scrollResponse.hits().hits();
-              String newScrollId = scrollResponse.scrollId();
-              if (hits.isEmpty()) {
-                clearScroll(scrollId)
-                    .onComplete(
-                        clearResult -> {
-                          LOGGER.debug(
-                              "Scroll completed. Total documents retrieved: {}", allResults.size());
-                          promise.complete(allResults);
-                        });
-                return;
-              }
-              processHits(hits, allResults);
-              LOGGER.debug(
-                  "Retrieved {} docs in scroll batch. Total so far: {}",
-                  hits.size(),
-                  allResults.size());
-              continueScrolling(newScrollId, allResults, promise);
-            });
-  }
-
-  private void processHits(List<Hit<ObjectNode>> hits, List<ElasticsearchResponse> results) {
-    for (Hit<ObjectNode> hit : hits) {
-      String id = hit.id();
-      JsonObject source =
-          hit.source() != null ? new JsonObject(hit.source().toString()) : new JsonObject();
-      results.add(new ElasticsearchResponse(id, source));
-    }
-  }
 }

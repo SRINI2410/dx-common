@@ -7,21 +7,38 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.serviceproxy.ServiceBinder;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.cdpg.dx.database.elastic.service.ElasticsearchService;
 import org.cdpg.dx.database.elastic.service.ElasticsearchServiceImpl;
 
 /**
- * The Elasticsearch Verticle.
+ * Generic Elasticsearch Verticle.
  *
- * <h1>Elasticsearch Verticle</h1>
+ * <p>Exposes an {@link ElasticsearchService} over the Vert.x Event Bus. The EventBus address is
+ * configurable via the {@code "serviceAddress"} config key, defaulting to {@link
+ * org.cdpg.dx.common.config.ServiceProxyAddressConstants#ELASTIC_SERVICE_ADDRESS}.
  *
- * <p>The Elasticsearch Verticle implementation in the IUDX Catalogue Server exposes the {@link
- * ElasticsearchService} over the Vert.x Event Bus.
+ * <p>This allows deploying <b>multiple instances</b> of this verticle pointing to different
+ * Elasticsearch clusters simply by providing different configuration blocks:
  *
- * @version 1.0
+ * <pre>{@code
+ * // Primary ES cluster (default address)
+ * { "id": "org.cdpg.dx.database.elastic.ElasticsearchVerticle",
+ *   "databaseIP": "local-es", "databasePort": 9200, ... }
+ *
+ * // Secondary ES cluster (custom address)
+ * { "id": "org.cdpg.dx.database.elastic.ElasticsearchVerticle",
+ *   "serviceAddress": "org.cdpg.dx.database.elastic.central.service",
+ *   "databaseIP": "central-es", "databasePort": 9200, ... }
+ * }</pre>
+ *
+ * @version 2.0
  * @since 2020-05-31
  */
 public class ElasticsearchVerticle extends AbstractVerticle {
+
+  private static final Logger LOGGER = LogManager.getLogger(ElasticsearchVerticle.class);
 
   private ElasticsearchService database;
   private String databaseIp;
@@ -32,13 +49,6 @@ public class ElasticsearchVerticle extends AbstractVerticle {
   private ServiceBinder binder;
   private MessageConsumer<JsonObject> consumer;
 
-  /**
-   * This method is used to start the Verticle. It deploys a verticle in a cluster, registers the
-   * service with the Event bus against an address, publishes the service with the service discovery
-   * interface.
-   *
-   * @throws Exception which is a start-up exception.
-   */
   @Override
   public void start() throws Exception {
     binder = new ServiceBinder(vertx);
@@ -47,12 +57,16 @@ public class ElasticsearchVerticle extends AbstractVerticle {
     databaseUser = config().getString(DATABASE_UNAME);
     databasePassword = config().getString(DATABASE_PASSWD);
 
-    client = new ElasticClient(databaseIp, databasePort, databaseUser, databasePassword);
+    // Configurable EventBus address — defaults to ELASTIC_SERVICE_ADDRESS
+    String address = config().getString(SERVICE_ADDRESS_KEY, ELASTIC_SERVICE_ADDRESS);
 
+    client = new ElasticClient(databaseIp, databasePort, databaseUser, databasePassword);
     database = new ElasticsearchServiceImpl(client);
 
-    consumer =
-        binder.setAddress(ELASTIC_SERVICE_ADDRESS).register(ElasticsearchService.class, database);
+    consumer = binder.setAddress(address).register(ElasticsearchService.class, database);
+
+    LOGGER.info(
+        "Elasticsearch service registered at address: {} ({}:{})", address, databaseIp, databasePort);
   }
 
   @Override

@@ -59,6 +59,9 @@ public class Constants {
   public static final String GREATER_THAN = "gt";
   public static final String LESS_THAN = "lt";
 
+  /* Verticle configuration */
+  public static final String SERVICE_ADDRESS_KEY = "serviceAddress";
+
   /* Size/pagination */
   public static final String SIZE_KEY = "size";
   public static final int STRING_SIZE = 100;

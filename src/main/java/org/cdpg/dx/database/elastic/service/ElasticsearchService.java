@@ -10,6 +10,7 @@ import java.util.List;
 import org.cdpg.dx.database.elastic.model.BulkScriptUpdate;
 import org.cdpg.dx.database.elastic.model.BulkSyncResult;
 import org.cdpg.dx.database.elastic.model.ElasticsearchResponse;
+import org.cdpg.dx.database.elastic.model.ElasticsearchSearchResult;
 import org.cdpg.dx.database.elastic.model.QueryModel;
 import org.cdpg.dx.database.elastic.model.ScrollResult;
 
@@ -22,7 +23,11 @@ public interface ElasticsearchService {
     return new ElasticsearchServiceVertxEBProxy(vertx, address);
   }
 
-  Future<List<ElasticsearchResponse>> search(String index, QueryModel queryModel, String options);
+  /**
+   * Search with result metadata. Returns hits, totalHits, and aggregations in a single object.
+   * Thread-safe and free of static state.
+   */
+  Future<ElasticsearchSearchResult> search(String index, QueryModel queryModel, String options);
 
   Future<Integer> count(String index, QueryModel queryModel);
 
@@ -41,8 +46,6 @@ public interface ElasticsearchService {
   Future<Void> deleteByQuery(String index, QueryModel queryModel);
 
   Future<Void> createIndex(String index, JsonObject mappings);
-
-  Future<List<ElasticsearchResponse>> asyncScroll(String index, QueryModel queryModel);
 
   Future<ScrollResult> scrollSearch(
       String index, QueryModel queryModel, String scrollTimeout, String options);

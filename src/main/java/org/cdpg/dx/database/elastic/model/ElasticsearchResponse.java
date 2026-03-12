@@ -6,8 +6,6 @@ import java.util.List;
 
 @DataObject(generateConverter = true)
 public class ElasticsearchResponse {
-  private static JsonObject aggregations;
-  private static int totalHits;
   private String docId;
   private JsonObject source;
   private List<Object> sortValues;
@@ -29,22 +27,6 @@ public class ElasticsearchResponse {
     this.docId = docId;
     this.source = source;
     this.sortValues = sortValues;
-  }
-
-  public static JsonObject getAggregations() {
-    return aggregations;
-  }
-
-  public static void setAggregations(JsonObject aggregations) {
-    ElasticsearchResponse.aggregations = aggregations;
-  }
-
-  public static int getTotalHits() {
-    return totalHits;
-  }
-
-  public static void setTotalHits(int totalHits) {
-    ElasticsearchResponse.totalHits = totalHits;
   }
 
   public JsonObject toJson() {
@@ -88,11 +70,7 @@ public class ElasticsearchResponse {
         + "docId='"
         + docId
         + '\''
-        + "totalHits='"
-        + totalHits
-        + '\''
-        + ", "
-        + "source="
+        + ", source="
         + source
         + '}';
   }
