@@ -5,4 +5,5 @@ public class Constants {
   public static final long DB_RECONNECT_INTERVAL_MS = 10;
   public static final String DEFAULT_SORTING_ORDER = "DESC";
   public static final String DEFAULT_SORTING_FIELD = "created_at";
+  public static final String SERVICE_ADDRESS_KEY = "serviceAddress";
 }

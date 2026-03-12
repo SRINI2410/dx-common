@@ -3,6 +3,7 @@ package org.cdpg.dx.database.postgres.verticle;
 import static org.cdpg.dx.common.config.ServiceProxyAddressConstants.POSTGRES_SERVICE_ADDRESS;
 import static org.cdpg.dx.database.postgres.util.Constants.DB_RECONNECT_ATTEMPTS;
 import static org.cdpg.dx.database.postgres.util.Constants.DB_RECONNECT_INTERVAL_MS;
+import static org.cdpg.dx.database.postgres.util.Constants.SERVICE_ADDRESS_KEY;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -19,6 +20,16 @@ import org.cdpg.dx.database.postgres.service.PostgresServiceImpl;
 
 import java.util.Map;
 
+/**
+ * Generic PostgreSQL Verticle.
+ *
+ * <p>Exposes a {@link PostgresService} over the Vert.x Event Bus. The EventBus address is
+ * configurable via the {@code "serviceAddress"} config key, defaulting to {@link
+ * org.cdpg.dx.common.config.ServiceProxyAddressConstants#POSTGRES_SERVICE_ADDRESS}.
+ *
+ * <p>This allows deploying <b>multiple instances</b> of this verticle pointing to different
+ * PostgreSQL databases simply by providing different configuration blocks.
+ */
 public class PostgresVerticle extends AbstractVerticle {
   private static final Logger LOGGER = LogManager.getLogger(PostgresVerticle.class);
   private MessageConsumer<JsonObject> consumer;
@@ -56,9 +67,12 @@ public class PostgresVerticle extends AbstractVerticle {
     this.pool = Pool.pool(vertx, connectOptions, poolOptions);
     PostgresService service = new PostgresServiceImpl(pool);
     binder = new ServiceBinder(vertx);
-    consumer = binder.setAddress(POSTGRES_SERVICE_ADDRESS).register(PostgresService.class, service);
 
-    LOGGER.info("Postgres verticle started.");
+    // Configurable EventBus address — defaults to POSTGRES_SERVICE_ADDRESS
+    String address = config().getString(SERVICE_ADDRESS_KEY, POSTGRES_SERVICE_ADDRESS);
+    consumer = binder.setAddress(address).register(PostgresService.class, service);
+
+    LOGGER.info("Postgres service registered at address: {} ({}:{})", address, databaseIp, databasePort);
     startPromise.complete();
   }
 

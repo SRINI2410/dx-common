@@ -41,6 +41,11 @@ public class OrderBy {
 
     public void setDirection(Direction direction) { this.direction = direction; }
 
+    @Override
+    public String toString() {
+        return "OrderBy{" + "column='" + column + '\'' + ", direction=" + direction + '}';
+    }
+
     // SQL Representation
     public String toSQL() {
         return column + " " + direction.name();
