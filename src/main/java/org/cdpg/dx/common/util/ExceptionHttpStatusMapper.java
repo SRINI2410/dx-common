@@ -35,6 +35,13 @@ public class ExceptionHttpStatusMapper {
       case DxRabbitMqException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
       case DxRabbitMqGeneralException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
       case DxSubscriptionException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
+      case DxNotAcceptableException e -> HttpStatusCode.NOT_ACCEPTABLE;
+      case InvalidTokenException e -> HttpStatusCode.UNAUTHORIZED;
+      case SearchValidationError e -> HttpStatusCode.BAD_REQUEST;
+      case DxSearchException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
+      case RedisKeyNotFoundException e -> HttpStatusCode.NOT_FOUND;
+      case RedisConnectionException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
+      case DxRedisException e -> HttpStatusCode.INTERNAL_SERVER_ERROR;
       case BaseDxException e -> HttpStatusCode.BAD_REQUEST;
       case IllegalArgumentException e -> HttpStatusCode.BAD_REQUEST;
       default -> HttpStatusCode.INTERNAL_SERVER_ERROR;

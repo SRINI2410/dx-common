@@ -9,7 +9,10 @@ import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.cdpg.dx.database.postgres.models.*;
@@ -17,8 +20,33 @@ import org.cdpg.dx.database.postgres.util.DxPgExceptionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Implementation of {@link PostgresService} that executes queries against a Vert.x reactive PG
+ * connection pool.
+ *
+ * <h3>Service Proxy Serialization</h3>
+ *
+ * When this service is accessed via the Vert.x event bus proxy, all method parameters are
+ * serialized to JSON and deserialized on the receiving side. This causes <b>type erasure</b> for
+ * non-JSON-native types:
+ *
+ * <ul>
+ *   <li>{@code UUID} → becomes {@code String} (e.g., "550e8400-e29b-41d4-a716-446655440000")
+ *   <li>{@code LocalDateTime} → becomes {@code String} (e.g., "2025-06-04T12:30:00")
+ *   <li>{@code OffsetDateTime} → becomes {@code String} (e.g., "2025-06-04T12:30:00+05:30")
+ * </ul>
+ *
+ * The {@link #addToTuple(Tuple, Object)} method detects these string-encoded types and restores
+ * them to their original Java types before adding to the SQL {@link Tuple}. This is necessary
+ * because the PostgreSQL driver requires the correct Java type for parameterized queries.
+ */
 public class PostgresServiceImpl implements PostgresService {
   private static final Logger LOG = LoggerFactory.getLogger(PostgresServiceImpl.class);
+
+  private static final Pattern UUID_PATTERN =
+      Pattern.compile(
+          "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
   private final Pool client;
 
   public PostgresServiceImpl(Pool client) {
@@ -32,8 +60,6 @@ public class PostgresServiceImpl implements PostgresService {
     for (Row row : rowSet) {
       JsonObject json = new JsonObject();
       for (int i = 0; i < row.size(); i++) {
-        // json.put(row.getColumnName(i), row.getValue(i));
-        // LOG.info("Column name: {}, value: {}", row.getColumnName(i), row.getValue(i));
         String column = row.getColumnName(i);
         value = row.getValue(i);
         if (value == null
@@ -42,7 +68,6 @@ public class PostgresServiceImpl implements PostgresService {
             || value instanceof Boolean
             || value instanceof JsonObject
             || value instanceof JsonArray) {
-          //  LOG.info("value:" + value);
           json.put(column, value);
         } else {
           json.put(column, value.toString());
@@ -51,21 +76,94 @@ public class PostgresServiceImpl implements PostgresService {
       jsonArray.add(json);
     }
 
-    boolean rowsAffected = rowSet.rowCount() > 0; // Check if any rows were affected
+    boolean rowsAffected = rowSet.rowCount() > 0;
     if (rowsAffected) {
-      LOG.info("Rows affected :{}", rowSet.rowCount());
+      LOG.info("Rows affected: {}", rowSet.rowCount());
     } else {
       LOG.info("Rows unaffected");
     }
-    // LOG.info("Returned rows: {}", jsonArray.encodePrettily());
 
     QueryResult queryResult = new QueryResult();
     queryResult.setRows(jsonArray);
     queryResult.setTotalCount(rowSet.rowCount());
     queryResult.setHasMore(false);
     queryResult.setRowsAffected(rowsAffected);
-    // return new QueryResult(jsonArray, jsonArray.size(), false, rowsAffected);
     return queryResult;
+  }
+
+  /**
+   * Adds a parameter to the SQL Tuple, restoring types that were lost during service proxy JSON
+   * serialization.
+   *
+   * <p>Detection order: UUID → OffsetDateTime → LocalDateTime → fallback (keep original).
+   *
+   * @param tuple the Tuple to add the parameter to
+   * @param param the parameter value (may be a String-encoded UUID, LocalDateTime, etc.)
+   */
+  private static void addToTuple(Tuple tuple, Object param) {
+    if (param == null) {
+      tuple.addValue(null);
+      return;
+    }
+    if (param instanceof String paramStr) {
+      // 1. Try UUID (exactly 36 chars: 8-4-4-4-12 hex)
+      if (paramStr.length() == 36 && UUID_PATTERN.matcher(paramStr).matches()) {
+        try {
+          tuple.addValue(UUID.fromString(paramStr));
+          return;
+        } catch (IllegalArgumentException e) {
+          LOG.debug("Looked like UUID but failed to parse, keeping as string: {}", paramStr);
+        }
+      }
+      // 2. Try OffsetDateTime (contains +/- offset or Z suffix)
+      if (looksLikeOffsetDateTime(paramStr)) {
+        try {
+          tuple.addValue(OffsetDateTime.parse(paramStr));
+          return;
+        } catch (Exception e) {
+          LOG.debug("Failed to parse OffsetDateTime, trying LocalDateTime: {}", paramStr);
+        }
+      }
+      // 3. Try LocalDateTime (ISO format without offset)
+      if (looksLikeLocalDateTime(paramStr)) {
+        try {
+          tuple.addValue(LocalDateTime.parse(paramStr));
+          return;
+        } catch (Exception e) {
+          LOG.debug("Failed to parse LocalDateTime, keeping as string: {}", paramStr);
+        }
+      }
+    }
+    // 4. Default: keep original type (String, Integer, Long, Double, Boolean, etc.)
+    tuple.addValue(param);
+  }
+
+  /**
+   * Quick check if a string looks like an OffsetDateTime (has timezone offset or Z suffix). Avoids
+   * expensive parse attempts for obviously non-datetime strings.
+   */
+  private static boolean looksLikeOffsetDateTime(String s) {
+    if (s.length() < 20) return false; // minimum: 2025-01-01T00:00:00Z
+    // Must start with yyyy-MM-ddT pattern
+    if (s.charAt(4) != '-' || s.charAt(10) != 'T') return false;
+    // Must end with Z, +HH:MM, or -HH:MM
+    char last = s.charAt(s.length() - 1);
+    if (last == 'Z' || last == 'z') return true;
+    // Check for offset pattern at end: +05:30 or -05:30
+    int len = s.length();
+    return len >= 25
+        && (s.charAt(len - 6) == '+' || s.charAt(len - 6) == '-')
+        && s.charAt(len - 3) == ':';
+  }
+
+  /**
+   * Quick check if a string looks like a LocalDateTime. Avoids expensive parse attempts for
+   * obviously non-datetime strings.
+   */
+  private static boolean looksLikeLocalDateTime(String s) {
+    // Minimum: 2025-01-01T00:00 (16 chars)
+    if (s.length() < 16) return false;
+    return s.charAt(4) == '-' && s.charAt(7) == '-' && s.charAt(10) == 'T';
   }
 
   private Future<QueryResult> executeQuery(String sql, List<Object> params) {
@@ -78,33 +176,8 @@ public class PostgresServiceImpl implements PostgresService {
     Tuple tuple = Tuple.tuple();
 
     try {
-
       for (Object param : params) {
-        /* LOG.info(
-        "Param type: "
-            + (param != null ? param.getClass().getSimpleName() : "null")
-            + ", value: "
-            + param);*/
-
-        if (param instanceof String paramStr) {
-          // Check if it's an ISO timestamp string
-          if (paramStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$")
-              || paramStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$")
-              || paramStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{1,9}$")) {
-            try {
-              // Parse and
-              // qconvert to LocalDateTime
-              LocalDateTime time = LocalDateTime.parse(paramStr);
-
-              tuple.addValue(time);
-              continue;
-            } catch (Exception e) {
-              LOG.info("Failed to parse timestamp, keeping as string: " + paramStr);
-            }
-          }
-        }
-        // Default: keep original
-        tuple.addValue(param);
+        addToTuple(tuple, param);
       }
 
       return client
@@ -117,12 +190,12 @@ public class PostgresServiceImpl implements PostgresService {
               })
           .recover(
               err -> {
-                LOG.error("SQL execution error: {}", err.getMessage());
+                LOG.error("SQL execution error: {}", err.getMessage(), err);
                 return Future.failedFuture(DxPgExceptionMapper.from(err));
               });
 
     } catch (Exception e) {
-      LOG.error("Exception while building Tuple or executing query: {}", e.getMessage());
+      LOG.error("Exception while building Tuple or executing query: {}", e.getMessage(), e);
       return Future.failedFuture(DxPgExceptionMapper.from(e));
     }
   }
@@ -147,7 +220,6 @@ public class PostgresServiceImpl implements PostgresService {
     LOG.info("Executing select query: {}", query.toSQL());
     String sql = query.toSQL();
     if (isCountQueryEnabled) {
-      // Insert COUNT(*) OVER() AS total_count into the select columns
       int selectIndex = sql.toLowerCase().indexOf("select") + 6;
       sql =
           sql.substring(0, selectIndex)
@@ -161,10 +233,6 @@ public class PostgresServiceImpl implements PostgresService {
                 int totalCount =
                     result.getRows().getJsonObject(0).getInteger("total_result_count", 0);
                 result.setTotalCount(totalCount);
-                // Optionally, remove total_count from each row if not needed in the output
-                /*for (int i = 0; i < result.getRows().size(); i++) {
-                  result.getRows().getJsonObject(i).remove("total_count");
-                }*/
               }
               return result;
             });
@@ -180,6 +248,7 @@ public class PostgresServiceImpl implements PostgresService {
               if (ar.succeeded()) {
                 promise.complete(true);
               } else {
+                LOG.warn("Ping failed: {}", ar.cause().getMessage());
                 promise.complete(false);
               }
             });
@@ -193,10 +262,9 @@ public class PostgresServiceImpl implements PostgresService {
 
   @Override
   public Future<QueryResult> executeQuery(String sql, JsonArray params) {
-
     Tuple tuple = Tuple.tuple();
     for (Object value : params) {
-      tuple.addValue(value);
+      addToTuple(tuple, value);
     }
     return client
         .preparedQuery(sql)

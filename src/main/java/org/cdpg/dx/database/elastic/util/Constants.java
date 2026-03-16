@@ -452,4 +452,186 @@ public class Constants {
   public static final String GEO_SHAPE_QUERY =
       "{ \"geo_shape\": { \"$4\": { \"shape\": { \"type\": \"$1\", \"coordinates\": $2 },"
           + " \"relation\": \"$3\" } } }";
+
+  // --- Constants shared across both controlplane and dataplane-rs ---
+
+  public static final String FLATTENED_TERM = "flattenedTerm";
+  public static final String AUTO_COMPLETE = "autoComplete";
+  public static final String LIMIT = "limit";
+  public static final String OFFSET = "offset";
+  public static final String ITEM_ID = "itemId";
+  public static final String TITLE_DB_ERROR = "database error";
+  public static final String TITLE_REQUIREMENTS_NOT_MET = "Requirements not met";
+  public static final String TITLE_INVALID_SEARCH_ERROR = "Invalid relationship type search";
+  public static final String TITLE_LINK_VALIDATION_FAILED = "Link Validation Failed";
+  public static final String TITLE_WRONG_INSTANCE_NAME = "Inavlid Requested Body";
+  public static final String TYPE_INVALID_SEARCH_ERROR = "urn:dx:cat:InvalidRelationSearch";
+  public static final String TYPE_LINK_VALIDATION_FAILED = "urn:dx:cat:LinkValidationFailed";
+  public static final String WRONG_INSTANCE_NAME = "Requested Body Instance Name wrong";
+
+  // Owner/org identifiers for asset searches
+  public static final String OWNER_USER_ID_KEYWORD = "ownerUserId.keyword";
+  public static final String ORGANIZATION_ID_KEYWORD = "organizationId.keyword";
+
+  // Asset search type prefixes/regex
+  public static final String MY_ASSETS_SEARCH_REGEX = "(.*)myAssetsAll(.*)";
+  public static final String PF_ASSETS_SEARCH_REGEX = "(.*)pfAssetsAll(.*)";
+  public static final String ORG_ASSETS_SEARCH_REGEX = "(.*)orgAssetsAll(.*)";
+  public static final String ACCESS_POLICY_REGEX = "(.*)accessPolicySearch(.*)";
+  public static final String SEARCH_TYPE_MY_ASSETS_ALL = "myAssetsAll_";
+  public static final String SEARCH_TYPE_PF_ASSETS_ALL = "pfAssetsAll_";
+  public static final String SEARCH_TYPE_ORG_ASSETS_ALL = "orgAssetsAll_";
+
+  // Geo search
+  public static final String GEO_KEY_Q = "geoQ";
+  public static final String GEO_SEARCH_KEY = "geoSearch_";
+
+  // Item types
+  public static final String ITEM_TYPE_AI_MODEL = "adex:AiModel";
+  public static final String ITEM_TYPE_DATA_BANK = "adex:DataBank";
+  public static final String ITEM_TYPE_APPS = "adex:Apps";
+
+  // Search limits
+  public static final int MAX_SEARCH_RESULT_LIMIT = 50000;
+
+  // --- Shared query templates (used by both projects) ---
+
+  public static final String GET_DOC_QUERY_WITH_TYPE =
+      "{\"query\":{\"bool\":{\"must\":[{\"term\":{\"id.keyword\":\"$1\"}},"
+          + "{\"terms\":{\"type.keyword\":$2}}]}},\"_source\":[$3]}";
+  public static final String GET_RDOC_QUERY =
+      "{\"query\":{\"bool\":{\"must\":[{\"term\":{\"id.keyword\":\"$1\"}}]}}}";
+  public static final String GET_ASSOCIATED_ID_QUERY =
+      "{\"query\":{\"bool\":{\"must\":[{\"term\":{\"$1.keyword\":\"$2\"}}]}}}";
+  public static final String GET_TYPE_SEARCH =
+      "{\"_source\":[$3],\"query\":"
+          + "{\"bool\":{\"must\":[{\"terms\":{\"type.keyword\":$1}},{\"match\":{\"instance\":"
+          + " \"$2\"}}]}},\"sort\":[{\"itemCreatedAt\":{\"order\":\"desc\"}}]}";
+  public static final String LIST_TYPES_QUERY =
+      "{\"size\":0,\"query\":{\"bool\":{\"must\":[{\"match\":{\"instance\":"
+          + " \"$1\"}}]}},\"aggs\":{\"results\":{\"composite\":{\"size\":10000,\"sources\":"
+          + "[{\"type\":{\"terms\":{\"field\":\"type.keyword\"}}}]}}}}";
+  public static final String LIST_INSTANCE_TYPES_QUERY =
+      "{\"size\":0,\"query\":{\"bool\":{\"must\":[{\"match\":{\"instance\":"
+          + "\"$1\"}}]}},\"aggs\":{\"results\":{\"composite\":{\"size\":10000,\"sources\":"
+          + "[{\"type\":{\"terms\":{\"field\":\"type.keyword\"}}}]}}}}";
+  public static final String LIST_TAGS_QUERY =
+      "{\"size\":0,\"query\":{\"bool\":{\"must\":[{\"match\":{\"instance\":"
+          + " \"$1\"}}]}},\"aggs\":{\"results\":{\"composite\":{\"size\":10000,\"sources\":"
+          + "[{\"tag\":{\"terms\":{\"field\":\"tags.keyword\"}}}]}}}}";
+  public static final String LIST_INSTANCE_TAGS_QUERY =
+      "{\"size\":0,\"query\":{\"bool\":{\"must\":[{\"match\":{\"instance\":"
+          + " \"$1\"}}]}},\"aggs\":{\"results\":{\"composite\":{\"size\":10000,\"sources\":"
+          + "[{\"tag\":{\"terms\":{\"field\":\"tags.keyword\"}}}]}}}}";
+  public static final String LIST_INSTANCES_QUERY =
+      "{\"size\":0,\"aggs\":{\"results\":{\"composite\":{\"size\":10000,\"sources\":"
+          + "[{\"instances\":{\"terms\":{\"field\":\"instance.keyword\"}}}]}}}}";
+  public static final String NLP_SEARCH =
+      "{\"query\":{\"multi_match\":{\"query\":\"$1\",\"fields\":[\"label\",\"tags\","
+          + "\"description\",\"name\"]}},\"_source\":[$2]}";
+  public static final String NLP_LOCATION_SEARCH =
+      "{\"query\":{\"multi_match\":{\"query\":\"$1\",\"fields\":[\"label\",\"tags\","
+          + "\"description\",\"name\"]}},\"_source\":[$2],\"sort\":[{\"_geo_distance\":"
+          + "{\"location\":{\"lat\":$3,\"lon\":$4},\"order\":\"asc\","
+          + "\"unit\":\"km\"}}]}";
+  public static final String QUERY_RESOURCE_GRP =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"resourceGroup.keyword\":\"$1\"}}]}},\"_source\":[$2]}";
+  public static final String GET_RS1 = "{\"query\": {\"bool\": {\"should\": [";
+  public static final String GET_RS2 = "{\"match\": {\"provider.keyword\": \"$1\"}},";
+  public static final String GET_RS3 = "],\"minimum_should_match\": 1}}}";
+  public static final String GET_RSGROUP =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"resourceGroup.keyword\":\"$1\"}},{\"term\":{\"type.keyword\":"
+          + "\"iudx:Resource\"}}]}},\"_source\":[$2]}";
+  public static final String GET_PROVIDER_AND_RESOURCEGROUP =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"provider.keyword\":\"$1\"}},{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\",\"iudx:Resource\"]}}]}},\"_source\":[$2]}";
+  public static final String GET_PROVIDER_AND_RS_ID =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"provider.keyword\":\"$1\"}},{\"match_phrase\":{\"resourceServer.keyword\":"
+          + "\"$2\"}},{\"term\":{\"type.keyword\":"
+          + "\"iudx:ResourceGroup\"}}]}},\"_source\":[$3]}";
+  public static final String RESOURCE_ACCESSPOLICY_COUNT =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"resourceGroup.keyword\":\"$1\"}},"
+          + "{\"term\":{\"type.keyword\":\"iudx:Resource\"}},"
+          + "{\"term\":{\"accessPolicy.keyword\":\"$2\"}}]}}}";
+  public static final String GET_AVG_RATING_PREFIX =
+      "{\"query\":{\"bool\":{\"should\":[";
+  public static final String GET_AVG_RATING_MATCH_QUERY =
+      "{\"match\":{\"id.keyword\":\"$1\"}},";
+  public static final String GET_AVG_RATING_SUFFIX =
+      "],\"minimum_should_match\":1}},"
+          + "\"aggs\":{\"avg_rating\":{\"avg\":{\"field\":\"rating\",\"missing\":0}}}}";
+  public static final String GET_RATING_DOCS =
+      "{\"query\":{\"bool\":{\"must\":[{\"term\":{\"id.keyword\": \"$1\"}},"
+          + "{\"term\":{\"ratingID.keyword\": \"$2\"}}]}}}";
+
+  // --- MLayer queries ---
+  public static final String CHECK_MDOC_QUERY =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"name\":\"$1\"}}]}}}";
+  public static final String CHECK_MDOC_QUERY_INSTANCE =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"instanceId.keyword\":\"$1\"}}]}}}";
+  public static final String CHECK_MDOC_QUERY_DOMAIN =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"domainId.keyword\":\"$1\"}}]}}}";
+  public static final String GET_ALL_MLAYER_INSTANCES =
+      "{\"query\":{\"match_all\":{}}}";
+  public static final String GET_SORTED_MLAYER_INSTANCES =
+      "{\"sort\":[{\"createdAt\":{\"order\":\"desc\"}}],\"query\":{\"match_all\":{}}}";
+  public static final String GET_ALL_MLAYER_INSTANCE_QUERY =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":"
+          + "{\"instanceId.keyword\":\"$1\"}}]}}}";
+  public static final String GET_ALL_MLAYER_DOMAIN_QUERY =
+      "{\"query\":{\"match_all\":{}}}";
+  public static final String GET_MLAYER_INSTANCE_QUERY =
+      "{\"query\":{\"match_phrase\":{\"instanceId.keyword\":\"$1\"}}}";
+  public static final String GET_MLAYER_DOMAIN_QUERY =
+      "{\"query\":{\"match_phrase\":{\"domainId.keyword\":\"$1\"}}}";
+  public static final String GET_MLAYER_INSTANCE_ICON =
+      "{\"_source\":[\"icon\"],\"query\":{\"match_phrase\":{\"instanceId.keyword\":\"$1\"}}}";
+  public static final String GET_MLAYER_PROVIDERS_QUERY =
+      "{\"size\":0,\"aggs\":{\"results\":{\"composite\":{\"size\":10000,"
+          + "\"sources\":[{\"provider\":{\"terms\":"
+          + "{\"field\":\"provider.keyword\"}}}]}}}}";
+  public static final String GET_MLAYER_ALL_DATASETS =
+      "{\"_source\":[$1],\"query\":{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\"]}}}";
+  public static final String GET_MLAYER_DATASET =
+      "{\"query\":{\"bool\":{\"must\":[{\"match_phrase\":{\"id.keyword\":\"$1\"}},"
+          + "{\"terms\":{\"type.keyword\":[\"iudx:ResourceGroup\","
+          + "\"iudx:Provider\",\"iudx:Resource\",\"iudx:ResourceServer\","
+          + "\"iudx:COS\"]}}]}},\"_source\":[$2]}";
+  public static final String GET_MLAYER_GEOQUERY =
+      "{\"_source\":[$3],\"query\":{\"bool\":{\"must\":[{\"terms\":"
+          + "{\"type.keyword\":[\"iudx:ResourceGroup\"]}},{\"geo_shape\":"
+          + "{\"location.geometry\":{\"shape\":{\"type\":\"$1\","
+          + "\"coordinates\":$2},\"relation\":\"intersects\"}}}]}}}";
+  public static final String GET_MLAYER_BOOL_GEOQUERY =
+      "{\"_source\":[$4],\"query\":{\"bool\":{\"must\":[{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\"]}},{\"geo_shape\":{\"location.geometry\":"
+          + "{\"shape\":{\"type\":\"$1\",\"coordinates\":$2},"
+          + "\"relation\":\"intersects\"}}},{\"bool\":{\"should\":[$3]}}]}}}";
+  public static final String GET_ALL_DATASETS_BY_RS_GRP =
+      "{\"query\":{\"bool\":{\"must\":[{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\"]}}]}},\"_source\":[$1],"
+          + "\"sort\":[{\"resourceServer.keyword\":{\"order\":\"asc\"}},"
+          + "{\"provider.keyword\":{\"order\":\"asc\"}}]}";
+  public static final String GET_ALL_DATASETS_BY_FIELDS =
+      "{\"query\":{\"bool\":{\"must\":[$1{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\"]}}]}},\"_source\":[$2],"
+          + "\"sort\":[{\"resourceServer.keyword\":{\"order\":\"asc\"}},"
+          + "{\"provider.keyword\":{\"order\":\"asc\"}}]}";
+  public static final String GET_ALL_DATASETS_BY_FIELD_SOURCE =
+      "{\"query\":{\"bool\":{\"must\":["
+          + "{\"terms\":{\"type.keyword\":[\"iudx:ResourceGroup\"]}}]}}}";
+  public static final String GET_DATASET_BY_INSTANCE =
+      "{\"query\":{\"bool\":{\"must\":[{\"terms\":{\"type.keyword\":"
+          + "[\"iudx:ResourceGroup\"]}},{\"match\":{\"instance\":\"$1\"}}]}},"
+          + "\"_source\":[$2],\"sort\":[{\"resourceServer.keyword\":"
+          + "{\"order\":\"asc\"}},{\"provider.keyword\":{\"order\":\"asc\"}}]}";
 }

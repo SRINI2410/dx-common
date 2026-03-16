@@ -31,6 +31,7 @@ public class DxPgExceptionMapper {
         default -> new DxPgException("Postgres Error: " + pgEx.getMessage(), pgEx);
       };
     }
-    return new DxPgException("Unknown DB Error", t);
+    return new DxPgException(
+        "Unknown DB Error [" + t.getClass().getName() + "]: " + t.getMessage(), t);
   }
 }
