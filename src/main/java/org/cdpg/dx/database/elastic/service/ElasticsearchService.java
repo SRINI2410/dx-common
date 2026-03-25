@@ -33,6 +33,8 @@ public interface ElasticsearchService {
 
   Future<List<String>> createDocuments(String index, List<QueryModel> documentModels);
 
+  Future<List<String>> createDocumentsAutoId(String index, List<QueryModel> documentModels);
+
   Future<ElasticsearchResponse> getSingleDocument(String docIndex, QueryModel queryModel);
 
   Future<Void> deleteDocument(String index, String id);

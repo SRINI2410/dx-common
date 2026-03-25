@@ -27,14 +27,30 @@ public class AuditingHandler {
   public void handleApiAudit(RoutingContext context) {
     context.addBodyEndHandler(
         v -> {
-          int statusCode = context.response().getStatusCode();
-          if (!STATUS_CODES_TO_AUDIT.contains(statusCode)) {
-            return;
-          }
+          context
+              .vertx()
+              .runOnContext(
+                  ignore -> {
+                    try {
+                      if (!STATUS_CODES_TO_AUDIT.contains(context.response().getStatusCode())) {
+                        LOGGER.debug(
+                            "Skipping audit for status code: {}",
+                            context.response().getStatusCode());
+                        return;
+                      }
+                      Optional<List<AuditLog>> auditLogData =
+                          RoutingContextHelper.getAuditingLog(context);
+                      if (auditLogData.isPresent()) {
+                        publishAuditLogs(auditLogData.get());
+                      } else {
+                        LOGGER.warn("No auditing log found in context");
+                      }
 
-          Optional<List<AuditLog>> auditLogData = RoutingContextHelper.getAuditingLog(context);
-          auditLogData.ifPresentOrElse(
-              this::publishAuditLogs, () -> LOGGER.warn("No auditing log found in context"));
+                    } catch (Exception e) {
+                      LOGGER.error("Error: while publishing auditing log: {}", e.getMessage());
+                      throw new RuntimeException(e);
+                    }
+                  });
         });
     context.next();
   }
