@@ -211,7 +211,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 routerBuilder.rootHandler(TimeoutHandler.create(timeout, 408));
 
                 BodyHandler bodyHandler =
-                    BodyHandler.create().setHandleFileUploads(false);
+                    BodyHandler.create().setHandleFileUploads(true);
                 long bodyLimit = getBodyLimit();
                 if (bodyLimit != BodyHandler.DEFAULT_BODY_LIMIT) {
                   bodyHandler.setBodyLimit(bodyLimit);
