@@ -20,6 +20,7 @@ import io.vertx.core.json.jackson.DatabindCodec;
 import io.vertx.core.net.JksOptions;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.AuthenticationHandler;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.TimeoutHandler;
@@ -150,6 +151,27 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
     // Default: no-op. Subclasses override to add custom routes.
   }
 
+  /**
+   * Returns the AppId authentication handler to register under the {@code "appIdAuth"} OpenAPI
+   * security scheme, or {@code null} to skip registration (default).
+   *
+   * <p>Override in subclasses that support direct AppId/AppSecret authentication (Approach B).
+   * The returned handler is registered via {@code routerBuilder.securityHandler("appIdAuth", ...)}
+   * and runs only for routes that declare the {@code appIdAuth} security scheme in openapi.yaml.
+   *
+   * <p>Example override in dx-dataplane-rs {@code ApiServerVerticle}:
+   * <pre>{@code
+   * protected AuthenticationHandler getAppIdAuthHandler() {
+   *   AppIdCacheService cache = new AppIdCacheService(maxSize, ttlMinutes);
+   *   AppIdVerificationClient client = new AppIdVerificationClient(host, grpcPort);
+   *   return new AppIdAuthHandler(cache, client);
+   * }
+   * }</pre>
+   */
+  protected AuthenticationHandler getAppIdAuthHandler() {
+    return null;
+  }
+
   // =====================================================================
   // Lifecycle — NOT overridable
   // =====================================================================
@@ -226,6 +248,12 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 // OpenAPI security handlers
                 routerBuilder.securityHandler("authorization", authHandler);
                 routerBuilder.securityHandler("optionalAuth", optionalAuthHandler);
+
+                // AppId security handler (optional — registered only if subclass provides one)
+                AuthenticationHandler appIdHandler = getAppIdAuthHandler();
+                if (appIdHandler != null) {
+                  routerBuilder.securityHandler("appIdAuth", appIdHandler);
+                }
 
                 controllers.forEach(controller -> controller.register(routerBuilder));
 
