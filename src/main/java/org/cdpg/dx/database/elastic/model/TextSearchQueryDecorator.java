@@ -43,7 +43,7 @@ public class TextSearchQueryDecorator implements ElasticsearchQueryDecorator {
               .setQueryParameters(
                   Map.of(
                       "fields",
-                      List.of("label", "tags", "description", "name"),
+                      List.of("label", "tags", "description", "name^5"),
                       "query",
                       textAttr,
                       "fuzziness",
@@ -58,7 +58,7 @@ public class TextSearchQueryDecorator implements ElasticsearchQueryDecorator {
               .setQueryParameters(
                   Map.of(
                       "fields",
-                      List.of("label", "tags", "description", "name"),
+                      List.of("label", "tags", "description", "name^5"),
                       "query",
                       textAttr,
                       "type",
@@ -69,7 +69,9 @@ public class TextSearchQueryDecorator implements ElasticsearchQueryDecorator {
 
     if (!isFuzzy && !isAutoComplete) {
       shouldQueries.add(
-          new QueryModel(QueryType.TEXT).setQueryParameters(Map.of(Q_VALUE, textAttr)));
+          new QueryModel(QueryType.MULTI_MATCH)
+              .setQueryParameters(
+                  Map.of("fields", List.of("name^5"), "query", textAttr, "boost", "3.0")));
     }
 
     QueryModel boolModel = new QueryModel(QueryType.BOOL);
