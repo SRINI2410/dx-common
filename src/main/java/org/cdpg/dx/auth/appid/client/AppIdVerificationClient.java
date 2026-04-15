@@ -16,26 +16,32 @@ import org.cdpg.dx.auth.appid.v1.VerifyAppIdResponse;
  * Async gRPC client for the AppIdVerificationService hosted on dx-controlplane.
  *
  * <p>Uses a non-blocking async stub so gRPC callbacks do not block the Vert.x event-loop. The
- * returned {@link Future} is completed on the gRPC callback thread; callers should use
- * {@code .onSuccess()} / {@code .onFailure()} rather than blocking.
+ * returned {@link Future} is completed on the gRPC callback thread; callers should use {@code
+ * .onSuccess()} / {@code .onFailure()} rather than blocking.
  *
- * <p>TLS: currently uses plaintext ({@code usePlaintext()}). For production across clusters,
- * replace with {@code useTransportSecurity()} and configure the appropriate trust manager
- * in {@link ManagedChannelBuilder} (OQ3 — pending network topology confirmation).
+ * <p>TLS: uses plaintext ({@code usePlaintext()}). All DX services run on the same Kubernetes
+ * cluster — TLS is handled at the service-mesh/ingress level, no additional gRPC-layer TLS needed
+ * (OQ3 resolved).
  */
 public class AppIdVerificationClient {
 
   private static final Logger LOGGER = LogManager.getLogger(AppIdVerificationClient.class);
 
+  private final ManagedChannel channel;
   private final AppIdVerificationServiceGrpc.AppIdVerificationServiceStub asyncStub;
 
   public AppIdVerificationClient(String host, int port) {
-    ManagedChannel channel =
+    this.channel =
         ManagedChannelBuilder.forAddress(host, port)
-            .usePlaintext() // TODO(OQ3): switch to TLS for cross-cluster production
+            .usePlaintext() // OQ3 resolved: all services on same Kubernetes cluster — TLS handled at mesh/ingress level
             .keepAliveTime(30, TimeUnit.SECONDS)
             .build();
-    this.asyncStub = AppIdVerificationServiceGrpc.newStub(channel);
+    this.asyncStub = AppIdVerificationServiceGrpc.newStub(this.channel);
+  }
+
+  /** Initiates a graceful shutdown of the underlying channel. Call during application teardown. */
+  public void shutdown() throws InterruptedException {
+    channel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
   }
 
   /**
