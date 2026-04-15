@@ -674,19 +674,26 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
   private Future<Void> executeUpdate(String index, String id, QueryModel model) {
     Promise<Void> promise = Promise.promise();
-    JsonObject doc = model.extractDocumentFromQueryModel();
-    String rawJson = doc.encode();
-    JsonData jsonData = JsonData.fromJson(rawJson);
+    Script script = model.toElasticsearchScript();
 
-    UpdateRequest<String, JsonData> updateRequest =
-        UpdateRequest.of(u -> u.index(index).id(id).doc(jsonData));
+    UpdateRequest.Builder<String, JsonData> builder =
+        new UpdateRequest.Builder<String, JsonData>().index(index).id(id).retryOnConflict(3);
+
+    if (script != null) {
+      builder.script(script);
+    } else {
+      JsonObject doc = model.extractDocumentFromQueryModel();
+      builder.doc(JsonData.fromJson(doc.encode()));
+    }
+
+    UpdateRequest<String, JsonData> request = builder.build();
 
     asyncClient
-        .update(updateRequest, JsonObject.class)
+        .update(request, JsonObject.class)
         .whenComplete(
             (res, err) -> {
               if (err != null) {
-                LOGGER.error("update failed {}", err.getMessage());
+                LOGGER.error("update failed {}", err.getMessage(), err);
                 promise.fail(new RuntimeException("Update error", err));
               } else {
                 promise.complete();
