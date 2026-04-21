@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cdpg.dx.auth.appid.v1.AppIdVerificationServiceGrpc;
+import org.cdpg.dx.auth.appid.v1.CheckItemAccessRequest;
+import org.cdpg.dx.auth.appid.v1.CheckItemAccessResponse;
 import org.cdpg.dx.auth.appid.v1.VerifyAppIdRequest;
 import org.cdpg.dx.auth.appid.v1.VerifyAppIdResponse;
 
@@ -67,9 +69,33 @@ public class AppIdVerificationClient {
           }
 
           @Override
-          public void onCompleted() {
-            // no-op — promise already completed in onNext
+          public void onCompleted() {}
+        });
+    return promise.future();
+  }
+
+  /**
+   * Sends a CheckItemAccess RPC to dx-controlplane.
+   * Called after credentials are already verified (appId trusted at this point).
+   */
+  public Future<CheckItemAccessResponse> checkItemAccess(String appId, String entityId) {
+    Promise<CheckItemAccessResponse> promise = Promise.promise();
+    asyncStub.checkItemAccess(
+        CheckItemAccessRequest.newBuilder().setAppId(appId).setEntityId(entityId).build(),
+        new StreamObserver<>() {
+          @Override
+          public void onNext(CheckItemAccessResponse response) {
+            promise.complete(response);
           }
+
+          @Override
+          public void onError(Throwable t) {
+            LOGGER.error("gRPC CheckItemAccess failed appId={} entityId={}: {}", appId, entityId, t.getMessage());
+            promise.fail(t);
+          }
+
+          @Override
+          public void onCompleted() {}
         });
     return promise.future();
   }
