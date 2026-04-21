@@ -172,6 +172,14 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
     return null;
   }
 
+  /**
+   * Returns the primary auth handler registered for the {@code authorization} security scheme.
+   * Default is JWT-only. Override in subclass to return a combined handler (e.g. Basic + Bearer).
+   */
+  protected AuthenticationHandler createMainAuthHandler(JwksResolver jwksResolver) {
+    return new MultiIssuerJwtAuthHandler(jwksResolver);
+  }
+
   // =====================================================================
   // Lifecycle — NOT overridable
   // =====================================================================
@@ -223,8 +231,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                         vertx, config().getJsonObject("issuers"), getJwksInternalProvider());
 
                 // Auth handlers
-                MultiIssuerJwtAuthHandler authHandler =
-                    new MultiIssuerJwtAuthHandler(jwksResolver);
+                AuthenticationHandler authHandler = createMainAuthHandler(jwksResolver);
                 OptionalMultiIssuerJwtAuthHandler optionalAuthHandler =
                     new OptionalMultiIssuerJwtAuthHandler(jwksResolver);
 
@@ -253,6 +260,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 AuthenticationHandler appIdHandler = getAppIdAuthHandler();
                 if (appIdHandler != null) {
                   routerBuilder.securityHandler("appIdAuth", appIdHandler);
+                  LOGGER.debug("Registered appIdAuth security handler: {}", appIdHandler.getClass().getName());
                 }
 
                 controllers.forEach(controller -> controller.register(routerBuilder));
