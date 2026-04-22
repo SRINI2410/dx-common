@@ -5,12 +5,12 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import java.util.List;
 import io.vertx.ext.auth.User;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.impl.AuthenticationHandlerInternal;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cdpg.dx.auth.appid.cache.AppIdCacheService;
@@ -131,13 +131,12 @@ public class AppIdAuthHandler implements AuthenticationHandlerInternal {
   }
 
   private User buildUser(AppIdPrincipal principal) {
-    // AppId-authenticated requests always get "consumer" role for the AuthorizationHandler gate.
-    // Fine-grained per-resource authorization is enforced by the per-entity access handler (CheckItemAccess gRPC).
+    List<String> roles = principal.roles().isEmpty() ? List.of("consumer") : principal.roles();
     JsonObject userPrincipal =
         new JsonObject()
             .put("sub", principal.userId())
             .put("iss", "dx-controlplane")
-            .put("realm_access", new JsonObject().put("roles", new JsonArray(List.of("consumer"))))
+            .put("realm_access", new JsonObject().put("roles", new JsonArray(roles)))
             .put(PRINCIPAL_APP_ID_KEY, principal.appId());
     return User.create(userPrincipal);
   }
