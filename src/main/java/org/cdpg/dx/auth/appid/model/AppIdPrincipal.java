@@ -6,7 +6,7 @@ import org.cdpg.dx.auth.appid.v1.AppIdPrincipalProto;
 /** Immutable identity principal from a successful gRPC VerifyAppId response. */
 public record AppIdPrincipal(
     String appId,
-    String ownerId,
+    String userId,
     List<String> roles,
     List<String> scopes,
     long expiresAtEpoch) {
@@ -14,7 +14,7 @@ public record AppIdPrincipal(
   public static AppIdPrincipal fromProto(AppIdPrincipalProto proto) {
     return new AppIdPrincipal(
         proto.getAppId(),
-        proto.getOwnerId(),
+        proto.getUserId(),
         proto.getRolesList(),
         proto.getScopesList(),
         proto.getExpiresAtEpoch());

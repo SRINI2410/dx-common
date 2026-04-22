@@ -12,8 +12,9 @@ import org.apache.logging.log4j.Logger;
  * Consumes AppId revocation messages from RabbitMQ and directly invalidates
  * the in-process caches.
  *
- * <p>Binds to the {@code revoked-appid} exchange (topic, routing key {@code #}) via a queue
- * of the same name. On each message, calls {@code invalidate(appId)} on both caches.
+ * <p>On {@link #start()}, declares the queue and binds it to the exchange (routing key {@code #})
+ * so no manual RabbitMQ setup is required. On each message, calls {@code invalidate(appId)} on
+ * both caches.
  *
  * <p>Expected message format: {@code { "appId": "<the-revoked-app-id>" }}
  */
@@ -27,24 +28,36 @@ public class AppIdRevocationConsumer {
   private final RabbitMQClient rabbitMQClient;
   private final AppIdCacheService appIdCacheService;
   private final AppIdItemAccessCacheService itemAccessCacheService;
+  private final String exchangeName;
   private final String queueName;
 
   public AppIdRevocationConsumer(
       RabbitMQClient rabbitMQClient,
       AppIdCacheService appIdCacheService,
       AppIdItemAccessCacheService itemAccessCacheService,
+      String exchangeName,
       String queueName) {
     this.rabbitMQClient = rabbitMQClient;
     this.appIdCacheService = appIdCacheService;
     this.itemAccessCacheService = itemAccessCacheService;
+    this.exchangeName = exchangeName;
     this.queueName = queueName;
   }
 
   public Future<Void> start() {
-    return rabbitMQClient
-        .basicConsumer(queueName, QUEUE_OPTIONS)
+    // RabbitClient fires client.start() asynchronously in its constructor — the connection may
+    // not be established yet when onBrokerReady() is called. Connect first if needed.
+    Future<Void> connectionFuture =
+        rabbitMQClient.isConnected() ? Future.succeededFuture() : rabbitMQClient.start();
+
+    return connectionFuture
+        // Declare durable, non-exclusive, non-auto-delete queue — idempotent if already exists
+        .compose(v -> rabbitMQClient.queueDeclare(queueName, true, false, false))
+        // Bind queue to exchange with wildcard routing key so all revocation events are received
+        .compose(declareOk -> rabbitMQClient.queueBind(queueName, exchangeName, "##"))
+        .compose(v -> rabbitMQClient.basicConsumer(queueName, QUEUE_OPTIONS))
         .onSuccess(consumer -> {
-          LOGGER.info("AppIdRevocationConsumer started, listening on queue={}", queueName);
+          LOGGER.info("AppIdRevocationConsumer started exchange={} queue={}", exchangeName, queueName);
           consumer.handler(message -> {
             Buffer body = message.body();
             if (body == null || body.length() == 0) {

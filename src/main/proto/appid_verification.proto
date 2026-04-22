@@ -21,7 +21,7 @@ message VerifyAppIdResponse {
 // Identity-only principal — no item metadata (that comes from CheckItemAccess).
 message AppIdPrincipalProto {
   string          app_id           = 1;
-  string          owner_id         = 2;  // user_id from app_credentials
+  string          user_id          = 2;  // user_id from app_credentials
   repeated string roles            = 3;  // e.g. ["consumer"]
   repeated string scopes           = 4;  // e.g. ["data_access"]
   int64           expires_at_epoch = 6;  // 0 = no expiry; field 5 reserved
@@ -29,8 +29,9 @@ message AppIdPrincipalProto {
 
 // ── CheckItemAccess ────────────────────────────────────────────────────────
 message CheckItemAccessRequest {
-  string app_id    = 1;
+  string user_id   = 1;  // userId from VerifyAppId response — no extra DB lookup needed
   string entity_id = 2;
+  string did       = 3;  // optional; empty = direct access, non-empty = delegation check (userId → did)
 }
 
 message CheckItemAccessResponse {

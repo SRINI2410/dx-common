@@ -76,12 +76,19 @@ public class AppIdVerificationClient {
 
   /**
    * Sends a CheckItemAccess RPC to dx-controlplane.
-   * Called after credentials are already verified (appId trusted at this point).
+   * Called after credentials are already verified (userId from VerifyAppId response).
+   *
+   * @param userId  userId (sub) from the VerifyAppId principal — no extra DB lookup on controlplane side
+   * @param did     delegate ID from the {@code did} HTTP header; empty string means no delegation
    */
-  public Future<CheckItemAccessResponse> checkItemAccess(String appId, String entityId) {
+  public Future<CheckItemAccessResponse> checkItemAccess(String userId, String entityId, String did) {
     Promise<CheckItemAccessResponse> promise = Promise.promise();
     asyncStub.checkItemAccess(
-        CheckItemAccessRequest.newBuilder().setAppId(appId).setEntityId(entityId).build(),
+        CheckItemAccessRequest.newBuilder()
+            .setUserId(userId)
+            .setEntityId(entityId)
+            .setDid(did != null ? did : "")
+            .build(),
         new StreamObserver<>() {
           @Override
           public void onNext(CheckItemAccessResponse response) {
@@ -90,7 +97,7 @@ public class AppIdVerificationClient {
 
           @Override
           public void onError(Throwable t) {
-            LOGGER.error("gRPC CheckItemAccess failed appId={} entityId={}: {}", appId, entityId, t.getMessage());
+            LOGGER.error("gRPC CheckItemAccess failed userId={} entityId={} did={}: {}", userId, entityId, did, t.getMessage());
             promise.fail(t);
           }
 
