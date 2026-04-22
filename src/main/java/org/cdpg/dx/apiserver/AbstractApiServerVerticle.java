@@ -20,6 +20,7 @@ import io.vertx.core.json.jackson.DatabindCodec;
 import io.vertx.core.net.JksOptions;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.AuthenticationHandler;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.TimeoutHandler;
@@ -33,7 +34,9 @@ import java.util.List;
 import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cdpg.dx.auth.appid.handler.AppIdAuthHandler;
 import org.cdpg.dx.auth.authentication.client.JwksResolver;
+import org.cdpg.dx.auth.authentication.handler.CombinedAuthHandler;
 import org.cdpg.dx.auth.authentication.handler.MultiIssuerJwtAuthHandler;
 import org.cdpg.dx.auth.authentication.handler.OptionalMultiIssuerJwtAuthHandler;
 import org.cdpg.dx.common.FailureHandler;
@@ -150,6 +153,36 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
     // Default: no-op. Subclasses override to add custom routes.
   }
 
+  /**
+   * Returns the {@link AppIdAuthHandler} for AppId/AppSecret Basic-auth authentication, or
+   * {@code null} (default) if this service does not support AppId auth.
+   *
+   * <p>When non-null, the abstract class automatically:
+   * <ol>
+   *   <li>Wraps it with {@link MultiIssuerJwtAuthHandler} in a {@link CombinedAuthHandler}
+   *   <li>Registers that {@code CombinedAuthHandler} as both the {@code "authorization"} and
+   *       {@code "appIdAuth"} OpenAPI security schemes
+   * </ol>
+   *
+   * <p>Subclasses only need to construct and return the {@link AppIdAuthHandler} — no
+   * {@code createMainAuthHandler()} override is needed.
+   *
+   * <p>Must be ready after {@link #createControllers} returns (i.e. the gRPC client and caches
+   * created there must already be assigned to fields before this is called).
+   */
+  protected AppIdAuthHandler getAppIdAuthHandler() {
+    return null;
+  }
+
+  /**
+   * Returns the primary auth handler for the {@code "authorization"} security scheme when AppId
+   * auth is NOT configured (i.e. {@link #getAppIdAuthHandler()} returns null). Default: JWT-only.
+   * Override only for services that need a fully custom auth handler without AppId support.
+   */
+  protected AuthenticationHandler createMainAuthHandler(JwksResolver jwksResolver) {
+    return new MultiIssuerJwtAuthHandler(jwksResolver);
+  }
+
   // =====================================================================
   // Lifecycle — NOT overridable
   // =====================================================================
@@ -200,11 +233,19 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                     new JwksResolver(
                         vertx, config().getJsonObject("issuers"), getJwksInternalProvider());
 
-                // Auth handlers
-                MultiIssuerJwtAuthHandler authHandler =
-                    new MultiIssuerJwtAuthHandler(jwksResolver);
+                // Auth handlers — auto-wire CombinedAuthHandler when AppId is configured
+                MultiIssuerJwtAuthHandler jwtHandler = new MultiIssuerJwtAuthHandler(jwksResolver);
                 OptionalMultiIssuerJwtAuthHandler optionalAuthHandler =
                     new OptionalMultiIssuerJwtAuthHandler(jwksResolver);
+
+                AppIdAuthHandler appIdAuthHandler = getAppIdAuthHandler();
+                AuthenticationHandler authHandler;
+                if (appIdAuthHandler != null) {
+                  authHandler = new CombinedAuthHandler(appIdAuthHandler, jwtHandler);
+                  LOGGER.debug("AppId auth enabled — using CombinedAuthHandler for authorization + appIdAuth");
+                } else {
+                  authHandler = createMainAuthHandler(jwksResolver);
+                }
 
                 LOGGER.debug("Adding platform handlers...");
                 long timeout = config().getLong("timeout", getDefaultTimeoutMs());
@@ -226,6 +267,9 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 // OpenAPI security handlers
                 routerBuilder.securityHandler("authorization", authHandler);
                 routerBuilder.securityHandler("optionalAuth", optionalAuthHandler);
+                if (appIdAuthHandler != null) {
+                  routerBuilder.securityHandler("appIdAuth", authHandler);
+                }
 
                 controllers.forEach(controller -> controller.register(routerBuilder));
 

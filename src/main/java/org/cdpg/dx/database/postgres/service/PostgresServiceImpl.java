@@ -11,8 +11,6 @@ import io.vertx.sqlclient.Tuple;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.UUID;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.cdpg.dx.database.postgres.models.*;
@@ -31,21 +29,17 @@ import org.slf4j.LoggerFactory;
  * non-JSON-native types:
  *
  * <ul>
- *   <li>{@code UUID} → becomes {@code String} (e.g., "550e8400-e29b-41d4-a716-446655440000")
  *   <li>{@code LocalDateTime} → becomes {@code String} (e.g., "2025-06-04T12:30:00")
  *   <li>{@code OffsetDateTime} → becomes {@code String} (e.g., "2025-06-04T12:30:00+05:30")
  * </ul>
  *
- * The {@link #addToTuple(Tuple, Object)} method detects these string-encoded types and restores
- * them to their original Java types before adding to the SQL {@link Tuple}. This is necessary
- * because the PostgreSQL driver requires the correct Java type for parameterized queries.
+ * The {@link #addToTuple(Tuple, Object)} method detects these string-encoded temporal types and
+ * restores them before adding to the SQL {@link Tuple}. UUID strings are left as plain strings
+ * because PostgreSQL's implicit text→UUID cast handles UUID-typed columns correctly, and
+ * VARCHAR columns that store UUID-formatted values must not receive a java.util.UUID object.
  */
 public class PostgresServiceImpl implements PostgresService {
   private static final Logger LOG = LoggerFactory.getLogger(PostgresServiceImpl.class);
-
-  private static final Pattern UUID_PATTERN =
-      Pattern.compile(
-          "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
   private final Pool client;
 
@@ -106,16 +100,7 @@ public class PostgresServiceImpl implements PostgresService {
       return;
     }
     if (param instanceof String paramStr) {
-      // 1. Try UUID (exactly 36 chars: 8-4-4-4-12 hex)
-      if (paramStr.length() == 36 && UUID_PATTERN.matcher(paramStr).matches()) {
-        try {
-          tuple.addValue(UUID.fromString(paramStr));
-          return;
-        } catch (IllegalArgumentException e) {
-          LOG.debug("Looked like UUID but failed to parse, keeping as string: {}", paramStr);
-        }
-      }
-      // 2. Try OffsetDateTime (contains +/- offset or Z suffix)
+      // 1. Try OffsetDateTime (contains +/- offset or Z suffix)
       if (looksLikeOffsetDateTime(paramStr)) {
         try {
           tuple.addValue(OffsetDateTime.parse(paramStr));
@@ -124,7 +109,7 @@ public class PostgresServiceImpl implements PostgresService {
           LOG.debug("Failed to parse OffsetDateTime, trying LocalDateTime: {}", paramStr);
         }
       }
-      // 3. Try LocalDateTime (ISO format without offset)
+      // 2. Try LocalDateTime (ISO format without offset)
       if (looksLikeLocalDateTime(paramStr)) {
         try {
           tuple.addValue(LocalDateTime.parse(paramStr));
@@ -134,7 +119,7 @@ public class PostgresServiceImpl implements PostgresService {
         }
       }
     }
-    // 4. Default: keep original type (String, Integer, Long, Double, Boolean, etc.)
+    // 3. Default: keep original type (String, Integer, Long, Double, Boolean, etc.)
     tuple.addValue(param);
   }
 
