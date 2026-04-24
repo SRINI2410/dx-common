@@ -9,17 +9,20 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.json.jackson.DatabindCodec;
 import io.vertx.core.net.JksOptions;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.AuthenticationHandler;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
@@ -30,6 +33,7 @@ import io.vertx.serviceproxy.HelperUtils;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
@@ -39,9 +43,12 @@ import org.cdpg.dx.auth.authentication.client.JwksResolver;
 import org.cdpg.dx.auth.authentication.handler.CombinedAuthHandler;
 import org.cdpg.dx.auth.authentication.handler.MultiIssuerJwtAuthHandler;
 import org.cdpg.dx.auth.authentication.handler.OptionalMultiIssuerJwtAuthHandler;
+import org.cdpg.dx.auth.v2.handler.AuthorizationHandler;
+import org.cdpg.dx.auth.v2.model.DxPrincipal;
 import org.cdpg.dx.common.FailureHandler;
 import org.cdpg.dx.common.HttpStatusCode;
 import org.cdpg.dx.common.URNGenerator;
+import org.cdpg.dx.common.exception.DxUnauthorizedException;
 import org.cdpg.dx.common.util.BlockingExecutionUtil;
 
 /**
@@ -183,6 +190,23 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
     return new MultiIssuerJwtAuthHandler(jwksResolver);
   }
 
+  /**
+   * Optional v2 auth dispatcher. Subclasses return a configured {@link
+   * org.cdpg.dx.auth.v2.handler.AuthenticationHandler} to enable the diagnostic route {@code GET
+   * /auth/v2/whoami}, which echoes the resolved {@link DxPrincipal} as JSON. Default: {@code null}
+   * — the diagnostic route is not mounted.
+   *
+   * <p>The base chains {@link OptionalMultiIssuerJwtAuthHandler} before this handler so Bearer
+   * tokens are validated when present, without failing non-Bearer requests. Returns 401/403/400
+   * via the standard {@link FailureHandler}.
+   *
+   * <p>Use this to test the v2 stack end-to-end against a running server before migrating
+   * individual endpoints.
+   */
+  protected Handler<RoutingContext> getAuthV2Handler() {
+    return null;
+  }
+
   // =====================================================================
   // Lifecycle — NOT overridable
   // =====================================================================
@@ -308,6 +332,17 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
 
                 // Allow subclasses to add custom routes
                 configureAdditionalRoutes(router, config());
+
+                // v2 auth diagnostic route — opt-in via getAuthV2Handler()
+                Handler<RoutingContext> authV2Handler = getAuthV2Handler();
+                if (authV2Handler != null) {
+                  router
+                      .route("/auth/v2/whoami")
+                      .handler(optionalAuthHandler)
+                      .handler(authV2Handler)
+                      .handler(AbstractApiServerVerticle::handleAuthV2Whoami);
+                  LOGGER.info("v2 auth diagnostic mounted at GET /auth/v2/whoami");
+                }
 
                 LOGGER.debug("Starting HTTP server...");
                 HttpServerOptions serverOptions = new HttpServerOptions();
@@ -458,6 +493,35 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
         LOGGER.info("Deployed endpoint [{}] {}", route.methods(), route.getPath());
       }
     }
+  }
+
+  private static void handleAuthV2Whoami(RoutingContext ctx) {
+    DxPrincipal principal = ctx.get(AuthorizationHandler.PRINCIPAL_KEY);
+    if (principal == null) {
+      ctx.fail(new DxUnauthorizedException("No authenticated principal"));
+      return;
+    }
+    JsonArray roles = new JsonArray();
+    principal.getAuthorizationRoles().forEach(r -> roles.add(r.name()));
+    JsonArray auditRoles = new JsonArray();
+    principal.getAuditRoles().forEach(r -> auditRoles.add(r.name()));
+    JsonObject body =
+        new JsonObject()
+            .put("sub", principal.getSub())
+            .put("organisationId", principal.getOrganisationId())
+            .put("authenticatedSub", principal.getAuthenticatedSub())
+            .put("authenticatedOrgId", principal.getAuthenticatedOrgId())
+            .put("isApp", principal.isApp())
+            .put("isDelegation", principal.isDelegation())
+            .put("isDirectUser", principal.isDirectUser())
+            .put("appId", principal.getAppId())
+            .put("authorizationRoles", roles)
+            .put("auditRoles", auditRoles)
+            .put("directScopes", new JsonArray(new ArrayList<>(principal.getDirectScopes())));
+    ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(body.encodePrettily());
   }
 
   /** Utility for building standardized error responses. */
