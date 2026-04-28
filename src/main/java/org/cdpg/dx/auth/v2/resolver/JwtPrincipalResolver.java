@@ -15,8 +15,8 @@ import org.cdpg.dx.common.exception.DxUnauthorizedException;
  * Resolves a plain-user JWT (already validated by an upstream JWT auth handler) into a {@link
  * DxPrincipal}. Has no external dependencies — purely reads {@code ctx.user().principal()}.
  *
- * <p>Fails the context with {@link DxUnauthorizedException} if the token is missing required
- * claims ({@code sub}, {@code organisation_id}).
+ * <p>Fails the context with {@link DxUnauthorizedException} if the token is missing the required
+ * claim {@code sub}. The {@code organisation_id} claim is optional.
  */
 public final class JwtPrincipalResolver {
 
@@ -29,8 +29,8 @@ public final class JwtPrincipalResolver {
     JsonObject claims = user.principal();
     String sub = claims.getString("sub");
     String orgId = claims.getString("organisation_id");
-    if (sub == null || orgId == null) {
-      ctx.fail(new DxUnauthorizedException("JWT missing sub or organisation_id"));
+    if (sub == null) {
+      ctx.fail(new DxUnauthorizedException("JWT missing sub"));
       return;
     }
 

@@ -359,24 +359,44 @@
                 <version>${maven-compiler-plugin.version}</version>
                 <configuration>
                     <release>${openjdk.version}</release>
-                    <annotationProcessors>
-                        <annotationProcessor>io.vertx.codegen.CodeGenProcessor</annotationProcessor>
-                    </annotationProcessors>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>io.vertx</groupId>
-                            <artifactId>vertx-codegen</artifactId>
-                            <version>${vertx.version}</version>
-                            <classifier>processor</classifier>
-                        </path>
-                        <path>
-                            <groupId>io.vertx</groupId>
-                            <artifactId>vertx-service-proxy</artifactId>
-                            <version>${vertx.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
                     <generatedSourcesDirectory>${project.basedir}/src/main/generated</generatedSourcesDirectory>
                 </configuration>
+                <executions>
+                    <!-- Main source compilation with annotation processors -->
+                    <execution>
+                        <id>default-compile</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <annotationProcessors>
+                                <annotationProcessor>io.vertx.codegen.CodeGenProcessor</annotationProcessor>
+                            </annotationProcessors>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>io.vertx</groupId>
+                                    <artifactId>vertx-codegen</artifactId>
+                                    <version>${vertx.version}</version>
+                                    <classifier>processor</classifier>
+                                </path>
+                                <path>
+                                    <groupId>io.vertx</groupId>
+                                    <artifactId>vertx-service-proxy</artifactId>
+                                    <version>${vertx.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                    <!-- Test source compilation (runs AFTER main compile) -->
+                    <execution>
+                        <id>default-testCompile</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

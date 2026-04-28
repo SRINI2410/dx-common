@@ -10,7 +10,7 @@ import java.util.Set;
  * <p>Invariants enforced by the builder:
  *
  * <ul>
- *   <li>Exactly one effective {@code sub} and one effective {@code orgId} per principal.
+ *   <li>Exactly one effective {@code sub} per principal; {@code orgId} is optional.
  *   <li>{@code authorizationRoles} is populated for the plain-user path only; empty for delegation
  *       and app principals (their effective scopes live in {@code directScopes}, already capped).
  *   <li>{@code auditRoles} is separate from {@code authorizationRoles}: audit never feeds back
@@ -31,7 +31,7 @@ public final class DxPrincipal {
 
   private DxPrincipal(Builder b) {
     this.authenticatedSub = Objects.requireNonNull(b.authenticatedSub, "authenticatedSub");
-    this.authenticatedOrgId = Objects.requireNonNull(b.authenticatedOrgId, "authenticatedOrgId");
+    this.authenticatedOrgId = b.authenticatedOrgId;
     this.delegatorSub = b.delegatorSub;
     this.delegatorOrgId = b.delegatorOrgId;
     this.authorizationRoles = Set.copyOf(b.authorizationRoles);

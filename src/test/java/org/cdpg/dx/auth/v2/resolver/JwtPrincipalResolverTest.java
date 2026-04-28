@@ -87,11 +87,16 @@ class JwtPrincipalResolverTest {
   }
 
   @Test
-  @DisplayName("missing organisation_id → 401")
+  @DisplayName("missing organisation_id → success (org is optional)")
   void missingOrg() {
     FakeRoutingContext fake =
         new FakeRoutingContext().userWithClaims(new JsonObject().put("sub", "alice"));
     resolver.resolve(fake.ctx);
-    assertInstanceOf(DxUnauthorizedException.class, fake.failedWith);
+
+    assertTrue(fake.nextCalled);
+    DxPrincipal p = (DxPrincipal) fake.data.get(AuthorizationHandler.PRINCIPAL_KEY);
+    assertNotNull(p);
+    assertEquals("alice", p.getSub());
+    assertNull(p.getOrganisationId());
   }
 }

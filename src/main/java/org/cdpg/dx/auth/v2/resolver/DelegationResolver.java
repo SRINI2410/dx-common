@@ -22,6 +22,8 @@ import org.cdpg.dx.common.exception.DxUnauthorizedException;
  * Resolves a JWT + {@code X-Delegator-Id} header into a {@link DxPrincipal} acting <em>as</em> the
  * delegator. The JWT must already be validated by an upstream auth handler.
  *
+ * <p>The JWT must include the {@code sub} claim. The {@code organisation_id} claim is optional.
+ *
  * <p>Effective scopes are the intersection of the delegation's stored scopes (or the delegator's
  * current flattened scopes, for a "full" delegation) and the delegator's current role-derived
  * scopes — so losing a role on the delegator immediately caps the delegation.
@@ -45,8 +47,8 @@ public final class DelegationResolver {
     JsonObject claims = user.principal();
     String delegateeSub = claims.getString("sub");
     String delegateeOrgId = claims.getString("organisation_id");
-    if (delegateeSub == null || delegateeOrgId == null) {
-      ctx.fail(new DxUnauthorizedException("JWT missing sub or organisation_id"));
+    if (delegateeSub == null) {
+      ctx.fail(new DxUnauthorizedException("JWT missing sub"));
       return;
     }
 
