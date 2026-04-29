@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package org.cdpg.dx.auth.appid.v1;
+
+option java_multiple_files  = true;
+option java_package         = "org.cdpg.dx.auth.appid.v1";
+option java_outer_classname = "AppIdVerificationProto";
+
+// ── VerifyAppId ────────────────────────────────────────────────────────────
+message VerifyAppIdRequest {
+  string app_id     = 1;  // UUID string — safe to log
+  string app_secret = 2;  // plaintext — NEVER log
+}
+
+message VerifyAppIdResponse {
+  bool   success    = 1;
+  string error_code = 2;  // empty on success; INVALID_CREDENTIALS | REVOKED | EXPIRED
+  AppIdPrincipalProto principal = 3;
+}
+
+// Identity-only principal — no item metadata (that comes from CheckItemAccess).
+message AppIdPrincipalProto {
+  string          app_id           = 1;
+  string          user_id          = 2;  // user_id from app_credentials
+  repeated string roles            = 3;  // e.g. ["consumer"]
+  repeated string scopes           = 4;  // e.g. ["data_access"]
+  int64           expires_at_epoch = 6;  // 0 = no expiry; field 5 reserved
+}
+
+// ── CheckItemAccess ────────────────────────────────────────────────────────
+message CheckItemAccessRequest {
+  string user_id   = 1;  // userId from VerifyAppId response — no extra DB lookup needed
+  string entity_id = 2;
+  string did       = 3;  // optional; empty = direct access, non-empty = delegation check (userId → did)
+}
+
+message CheckItemAccessResponse {
+  bool   success              = 1;
+  string error_code           = 2;  // NO_ACCESS | NOT_FOUND | INTERNAL_ERROR
+  string iid                  = 3;
+  string access_policy        = 4;
+  string resource_server_json = 5;  // JSON-encoded resourceServer array
+  string policies_json        = 6;  // JSON-encoded policies array
+}
+
+// ── Service ────────────────────────────────────────────────────────────────
+service AppIdVerificationService {
+  rpc VerifyAppId      (VerifyAppIdRequest)      returns (VerifyAppIdResponse);
+  rpc CheckItemAccess  (CheckItemAccessRequest)  returns (CheckItemAccessResponse);
+}

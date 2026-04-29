@@ -1,9 +1,13 @@
 package org.cdpg.dx.auth.authentication.handler;
 
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.auth.User;
 import io.vertx.ext.auth.authentication.TokenCredentials;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.handler.AuthenticationHandler;
+import io.vertx.ext.web.handler.impl.AuthenticationHandlerInternal;
 import java.util.Base64;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -11,7 +15,7 @@ import org.cdpg.dx.auth.authentication.client.JwksResolver;
 import org.cdpg.dx.auth.authentication.util.BearerTokenExtractor;
 import org.cdpg.dx.common.exception.DxUnauthorizedException;
 
-public class MultiIssuerJwtAuthHandler implements AuthenticationHandler {
+public class MultiIssuerJwtAuthHandler implements AuthenticationHandlerInternal {
   private static final Logger LOGGER = LogManager.getLogger(MultiIssuerJwtAuthHandler.class);
 
   private final JwksResolver jwksResolver;
@@ -36,10 +40,22 @@ public class MultiIssuerJwtAuthHandler implements AuthenticationHandler {
 
   @Override
   public void handle(RoutingContext ctx) {
+    authenticate(ctx, res -> {
+      if (res.succeeded()) {
+        ctx.setUser(res.result());
+        postAuthentication(ctx);
+      } else {
+        ctx.fail(res.cause());
+      }
+    });
+  }
+
+  @Override
+  public void authenticate(RoutingContext ctx, Handler<AsyncResult<User>> handler) {
     String token = BearerTokenExtractor.extract(ctx);
     if (token == null || token.isBlank()) {
       LOGGER.warn("Missing or invalid Authorization header");
-      ctx.fail(new DxUnauthorizedException("Missing Bearer token"));
+      handler.handle(Future.failedFuture(new DxUnauthorizedException("Missing Bearer token")));
       return;
     }
 
@@ -50,24 +66,20 @@ public class MultiIssuerJwtAuthHandler implements AuthenticationHandler {
       kid = extractKid(token);
     } catch (Exception e) {
       LOGGER.error("Failed to extract token claims: {}", e.getMessage());
-      ctx.fail(new DxUnauthorizedException("Invalid token format"));
+      handler.handle(Future.failedFuture(new DxUnauthorizedException("Invalid token format")));
       return;
     }
 
     jwksResolver
         .resolve(issuer, kid)
         .compose(jwtAuth -> jwtAuth.authenticate(new TokenCredentials(token)))
-        .onSuccess(
-            user -> {
-              LOGGER.info("Authentication successful for issuer: {}, kid: {}", issuer, kid);
-              ctx.setUser(user);
-              ctx.next();
-            })
-        .onFailure(
-            err -> {
-              LOGGER.error(
-                  "Authentication failed for issuer {}, kid {}: {}", issuer, kid, err.getMessage());
-              ctx.fail(new DxUnauthorizedException("Unauthorized: %s".formatted(err.getMessage())));
-            });
+        .onSuccess(user -> {
+          LOGGER.info("Authentication successful for issuer: {}, kid: {}", issuer, kid);
+          handler.handle(Future.succeededFuture(user));
+        })
+        .onFailure(err -> {
+          LOGGER.error("Authentication failed for issuer {}, kid {}: {}", issuer, kid, err.getMessage());
+          handler.handle(Future.failedFuture(new DxUnauthorizedException("Unauthorized: %s".formatted(err.getMessage()))));
+        });
   }
 }

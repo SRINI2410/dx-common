@@ -6,6 +6,9 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.junit5.VertxTestContext;
 import java.util.UUID;
+import org.cdpg.dx.databroker.model.ExchangeSubscribersResponse;
+import org.cdpg.dx.databroker.model.RegisterExchangeModel;
+import org.cdpg.dx.databroker.model.RegisterQueueModel;
 import org.cdpg.dx.databroker.util.PermissionOpType;
 import org.cdpg.dx.databroker.util.Vhosts;
 import org.cdpg.dx.testutil.RabbitMQTestBase;
@@ -37,7 +40,8 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
-                          assertThat(result.getExchangeName())
+                          RegisterExchangeModel exchange = (RegisterExchangeModel) result;
+                          assertThat(exchange.getExchangeName())
                               .isEqualTo(TEST_EXCHANGE);
                           ctx.completeNow();
                         })));
@@ -70,7 +74,8 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
-                          assertThat(result.getQueueName())
+                          RegisterQueueModel queue = (RegisterQueueModel) result;
+                          assertThat(queue.getQueueName())
                               .isEqualTo(TEST_QUEUE);
                           ctx.completeNow();
                         })));
@@ -88,8 +93,9 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
+                          RegisterQueueModel queue = (RegisterQueueModel) result;
                           // User already exists, so apiKey should contain the message
-                          assertThat(result.toJson().getString("apiKey")).isNotNull();
+                          assertThat(queue.toJson().getString("apiKey")).isNotNull();
                           ctx.completeNow();
                         })));
   }
@@ -120,8 +126,9 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
+                          ExchangeSubscribersResponse response = (ExchangeSubscribersResponse) result;
                           // Should have at least the binding we created
-                          assertThat(result.getSubscribers()).isNotNull();
+                          assertThat(response.getSubscribers()).isNotNull();
                           ctx.completeNow();
                         })));
   }
@@ -244,9 +251,10 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
-                          assertThat(result.getExchangeName()).isEqualTo(extExchange);
-                          assertThat(result.getUserId()).isEqualTo(extUserId);
-                          assertThat(result.getApiKey()).isNotNull();
+                          RegisterExchangeModel exchange = (RegisterExchangeModel) result;
+                          assertThat(exchange.getExchangeName()).isEqualTo(extExchange);
+                          assertThat(exchange.getUserId()).isEqualTo(extUserId);
+                          assertThat(exchange.getApiKey()).isNotNull();
                           ctx.completeNow();
                         })));
   }
@@ -265,8 +273,9 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                     ctx.verify(
                         () -> {
                           assertThat(result).isNotNull();
-                          assertThat(result.getQueueName()).isEqualTo(intQueue);
-                          assertThat(result.getUserId()).isEqualTo(intUserId);
+                          RegisterQueueModel queue = (RegisterQueueModel) result;
+                          assertThat(queue.getQueueName()).isEqualTo(intQueue);
+                          assertThat(queue.getUserId()).isEqualTo(intUserId);
                           ctx.completeNow();
                         })));
   }
@@ -282,9 +291,10 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                 response ->
                     ctx.verify(
                         () -> {
-                          assertThat(response.getSubscribers()).isNotEmpty();
+                          ExchangeSubscribersResponse resp = (ExchangeSubscribersResponse) response;
+                          assertThat(resp.getSubscribers()).isNotEmpty();
                           // Serialization to JSON should work
-                          JsonObject json = response.toJson();
+                          JsonObject json = resp.toJson();
                           assertThat(json.isEmpty()).isFalse();
                           ctx.completeNow();
                         })));
@@ -318,11 +328,12 @@ class DataBrokerServiceIT extends RabbitMQTestBase {
                 result ->
                     ctx.verify(
                         () -> {
-                          assertThat(result.getUrl()).isNotNull();
-                          assertThat(result.getPort()).isGreaterThan(0);
-                          assertThat(result.getvHost()).isNotNull();
+                          RegisterExchangeModel exch = (RegisterExchangeModel) result;
+                          assertThat(exch.getUrl()).isNotNull();
+                          assertThat(exch.getPort()).isGreaterThan(0);
+                          assertThat(exch.getvHost()).isNotNull();
                           // toJson round-trip
-                          JsonObject json = result.toJson();
+                          JsonObject json = exch.toJson();
                           assertThat(json.getString("id")).isEqualTo(exchange);
                           assertThat(json.getString("username")).isEqualTo(userId);
                           ctx.completeNow();
