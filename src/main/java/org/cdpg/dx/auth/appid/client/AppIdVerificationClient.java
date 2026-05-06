@@ -1,11 +1,11 @@
 package org.cdpg.dx.auth.appid.client;
 
-import io.grpc.Grpc;
-import io.grpc.InsecureChannelCredentials;
 import io.grpc.ManagedChannel;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,7 +35,8 @@ public class AppIdVerificationClient {
 
   public AppIdVerificationClient(String host, int port) {
     this.channel =
-        Grpc.newChannelBuilder(host + ":" + port, InsecureChannelCredentials.create())
+        NettyChannelBuilder.forAddress(new InetSocketAddress(host, port))
+            .usePlaintext()
             .keepAliveTime(30, TimeUnit.SECONDS)
             .build();
     this.asyncStub = AppIdVerificationServiceGrpc.newStub(this.channel);
