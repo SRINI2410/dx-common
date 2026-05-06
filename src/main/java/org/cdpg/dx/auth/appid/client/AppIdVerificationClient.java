@@ -5,7 +5,9 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -34,8 +36,16 @@ public class AppIdVerificationClient {
   private final AppIdVerificationServiceGrpc.AppIdVerificationServiceStub asyncStub;
 
   public AppIdVerificationClient(String host, int port) {
+    // Docker Swarm DNS names contain underscores (e.g. stack_service), which java.net.URI
+    // rejects. Resolving to InetAddress first means gRPC sees the IP as the authority string.
+    InetAddress resolved;
+    try {
+      resolved = InetAddress.getByName(host);
+    } catch (UnknownHostException e) {
+      throw new IllegalArgumentException("Cannot resolve controlplane host: " + host, e);
+    }
     this.channel =
-        NettyChannelBuilder.forAddress(new InetSocketAddress(host, port))
+        NettyChannelBuilder.forAddress(new InetSocketAddress(resolved, port))
             .usePlaintext()
             .keepAliveTime(30, TimeUnit.SECONDS)
             .build();
