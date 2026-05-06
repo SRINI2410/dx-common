@@ -84,20 +84,57 @@ import org.cdpg.dx.common.util.BlockingExecutionUtil;
  */
 public abstract class AbstractApiServerVerticle extends AbstractVerticle {
 
-  private static final Logger LOGGER = LogManager.getLogger(AbstractApiServerVerticle.class);
-
   protected static final String APPLICATION_JSON = "application/json";
   protected static final String CONTENT_TYPE = "Content-Type";
   protected static final String ROUTE_STATIC_SPEC = "/apis/spec";
   protected static final String ROUTE_DOC = "/apis";
-
+  private static final Logger LOGGER = LogManager.getLogger(AbstractApiServerVerticle.class);
+  protected URNGenerator urnGenerator;
   private HttpServer server;
   private Router router;
-  protected URNGenerator urnGenerator;
 
   // =====================================================================
   // Abstract methods — subclasses MUST provide
   // =====================================================================
+
+  private static void handleAuthV2Whoami(RoutingContext ctx) {
+    DxPrincipal principal = ctx.get(AuthorizationHandler.PRINCIPAL_KEY);
+    if (principal == null) {
+      ctx.fail(new DxUnauthorizedException("No authenticated principal"));
+      return;
+    }
+    JsonArray roles = new JsonArray();
+    principal.getAuthorizationRoles().forEach(r -> roles.add(r.name()));
+    JsonArray auditRoles = new JsonArray();
+    principal.getAuditRoles().forEach(r -> auditRoles.add(r.name()));
+    JsonObject body =
+        new JsonObject()
+            .put("sub", principal.getSub())
+            .put("organisationId", principal.getOrganisationId())
+            .put("authenticatedSub", principal.getAuthenticatedSub())
+            .put("authenticatedOrgId", principal.getAuthenticatedOrgId())
+            .put("isApp", principal.isApp())
+            .put("isDelegation", principal.isDelegation())
+            .put("isDirectUser", principal.isDirectUser())
+            .put("appId", principal.getAppId())
+            .put("authorizationRoles", roles)
+            .put("auditRoles", auditRoles)
+            .put("directScopes", new JsonArray(new ArrayList<>(principal.getDirectScopes())));
+    ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(body.encodePrettily());
+  }
+
+  /** Utility for building standardized error responses. */
+  public static String errorResponse(HttpStatusCode code, URNGenerator urnGenerator) {
+    String urn = urnGenerator.generateUrn(code.getPath());
+    return new JsonObject()
+        .put("type", urn)
+        .put("title", code.getDescription())
+        .put("detail", code.getDescription())
+        .toString();
+  }
 
   /** Path to the OpenAPI YAML spec file (e.g., "docs/openapi.yaml"). */
   protected abstract String getOpenApiSpecPath(JsonObject config);
@@ -105,16 +142,16 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
   /** Default HTTP port (used if "httpPort" is not in config). */
   protected abstract int getDefaultPort();
 
+  // =====================================================================
+  // Optional overrides — sensible defaults provided
+  // =====================================================================
+
   /** Default URN prefix (e.g., "urn:dx:controlPanel:"). */
   protected abstract String getDefaultUrnPrefix();
 
   /** Create and return all API controllers for this server. */
   protected abstract List<ApiController> createControllers(
       io.vertx.core.Vertx vertx, JsonObject config, URNGenerator urnGenerator);
-
-  // =====================================================================
-  // Optional overrides — sensible defaults provided
-  // =====================================================================
 
   /** Config key for the base URL placeholder replacement. Default: "baseUrl". */
   protected String getBaseUrlConfigKey() {
@@ -134,7 +171,10 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
     return null;
   }
 
-  /** Body size limit for requests. Default: {@link BodyHandler#DEFAULT_BODY_LIMIT}. Use -1 for unlimited. */
+  /**
+   * Body size limit for requests. Default: {@link BodyHandler#DEFAULT_BODY_LIMIT}. Use -1 for
+   * unlimited.
+   */
   protected long getBodyLimit() {
     return BodyHandler.DEFAULT_BODY_LIMIT;
   }
@@ -153,26 +193,27 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
   }
 
   /**
-   * Hook for registering additional routes on the router (e.g., health, documentation). Called after
-   * all OpenAPI routes are registered.
+   * Hook for registering additional routes on the router (e.g., health, documentation). Called
+   * after all OpenAPI routes are registered.
    */
   protected void configureAdditionalRoutes(Router router, JsonObject config) {
     // Default: no-op. Subclasses override to add custom routes.
   }
 
   /**
-   * Returns the {@link AppIdAuthHandler} for AppId/AppSecret Basic-auth authentication, or
-   * {@code null} (default) if this service does not support AppId auth.
+   * Returns the {@link AppIdAuthHandler} for AppId/AppSecret Basic-auth authentication, or {@code
+   * null} (default) if this service does not support AppId auth.
    *
    * <p>When non-null, the abstract class automatically:
+   *
    * <ol>
    *   <li>Wraps it with {@link MultiIssuerJwtAuthHandler} in a {@link CombinedAuthHandler}
-   *   <li>Registers that {@code CombinedAuthHandler} as both the {@code "authorization"} and
-   *       {@code "appIdAuth"} OpenAPI security schemes
+   *   <li>Registers that {@code CombinedAuthHandler} as both the {@code "authorization"} and {@code
+   *       "appIdAuth"} OpenAPI security schemes
    * </ol>
    *
-   * <p>Subclasses only need to construct and return the {@link AppIdAuthHandler} — no
-   * {@code createMainAuthHandler()} override is needed.
+   * <p>Subclasses only need to construct and return the {@link AppIdAuthHandler} — no {@code
+   * createMainAuthHandler()} override is needed.
    *
    * <p>Must be ready after {@link #createControllers} returns (i.e. the gRPC client and caches
    * created there must already be assigned to fields before this is called).
@@ -180,6 +221,10 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
   protected AppIdAuthHandler getAppIdAuthHandler() {
     return null;
   }
+
+  // =====================================================================
+  // Lifecycle — NOT overridable
+  // =====================================================================
 
   /**
    * Returns the primary auth handler for the {@code "authorization"} security scheme when AppId
@@ -197,8 +242,8 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
    * — the diagnostic route is not mounted.
    *
    * <p>The base chains {@link OptionalMultiIssuerJwtAuthHandler} before this handler so Bearer
-   * tokens are validated when present, without failing non-Bearer requests. Returns 401/403/400
-   * via the standard {@link FailureHandler}.
+   * tokens are validated when present, without failing non-Bearer requests. Returns 401/403/400 via
+   * the standard {@link FailureHandler}.
    *
    * <p>Use this to test the v2 stack end-to-end against a running server before migrating
    * individual endpoints.
@@ -208,13 +253,18 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
   }
 
   // =====================================================================
-  // Lifecycle — NOT overridable
+  // Shared private methods — identical across all DX API servers
   // =====================================================================
 
   @Override
   public void start() throws Exception {
     int port = config().getInteger("httpPort", getDefaultPort());
-    allowedOrigins = config().getJsonArray("corsAllowedOrigin").getList();
+    JsonArray corsArray = config().getJsonArray("corsAllowedOrigin");
+    if (corsArray == null) {
+      throw new IllegalArgumentException(
+          "Missing required configuration: 'corsAllowedOrigin' key must be defined in config");
+    }
+    allowedOrigins = corsArray.getList();
     String urnPrefix = config().getString("urnPrefix", getDefaultUrnPrefix());
     this.urnGenerator = new URNGenerator(urnPrefix);
 
@@ -266,7 +316,8 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 AuthenticationHandler authHandler;
                 if (appIdAuthHandler != null) {
                   authHandler = new CombinedAuthHandler(appIdAuthHandler, jwtHandler);
-                  LOGGER.debug("AppId auth enabled — using CombinedAuthHandler for authorization + appIdAuth");
+                  LOGGER.debug(
+                      "AppId auth enabled — using CombinedAuthHandler for authorization + appIdAuth");
                 } else {
                   authHandler = createMainAuthHandler(jwksResolver);
                 }
@@ -275,8 +326,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 long timeout = config().getLong("timeout", getDefaultTimeoutMs());
                 routerBuilder.rootHandler(TimeoutHandler.create(timeout, 408));
 
-                BodyHandler bodyHandler =
-                    BodyHandler.create().setHandleFileUploads(true);
+                BodyHandler bodyHandler = BodyHandler.create().setHandleFileUploads(true);
                 long bodyLimit = getBodyLimit();
                 if (bodyLimit != BodyHandler.DEFAULT_BODY_LIMIT) {
                   bodyHandler.setBodyLimit(bodyLimit);
@@ -310,10 +360,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                 router
                     .get(ROUTE_STATIC_SPEC)
                     .produces(APPLICATION_JSON)
-                    .handler(
-                        ctx ->
-                            ctx.response()
-                                .sendFile(tempFile.toAbsolutePath().toString()));
+                    .handler(ctx -> ctx.response().sendFile(tempFile.toAbsolutePath().toString()));
 
                 router
                     .get(ROUTE_DOC)
@@ -357,9 +404,7 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
                           if (http.succeeded()) {
                             printDeployedEndpoints(router);
                             LOGGER.info(
-                                "{} deployed on port: {}",
-                                this.getClass().getSimpleName(),
-                                port);
+                                "{} deployed on port: {}", this.getClass().getSimpleName(), port);
                           } else {
                             LOGGER.error(
                                 "HTTP server failed to start: {}",
@@ -386,10 +431,6 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
       server.close();
     }
   }
-
-  // =====================================================================
-  // Shared private methods — identical across all DX API servers
-  // =====================================================================
 
   private void configureJackson() {
     ObjectMapper mapper = DatabindCodec.mapper();
@@ -458,7 +499,10 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
             }
             return;
           }
-          response.setStatusCode(401).putHeader(CONTENT_TYPE, APPLICATION_JSON).end("not implemented");
+          response
+              .setStatusCode(401)
+              .putHeader(CONTENT_TYPE, APPLICATION_JSON)
+              .end("not implemented");
         });
   }
 
@@ -493,44 +537,5 @@ public abstract class AbstractApiServerVerticle extends AbstractVerticle {
         LOGGER.info("Deployed endpoint [{}] {}", route.methods(), route.getPath());
       }
     }
-  }
-
-  private static void handleAuthV2Whoami(RoutingContext ctx) {
-    DxPrincipal principal = ctx.get(AuthorizationHandler.PRINCIPAL_KEY);
-    if (principal == null) {
-      ctx.fail(new DxUnauthorizedException("No authenticated principal"));
-      return;
-    }
-    JsonArray roles = new JsonArray();
-    principal.getAuthorizationRoles().forEach(r -> roles.add(r.name()));
-    JsonArray auditRoles = new JsonArray();
-    principal.getAuditRoles().forEach(r -> auditRoles.add(r.name()));
-    JsonObject body =
-        new JsonObject()
-            .put("sub", principal.getSub())
-            .put("organisationId", principal.getOrganisationId())
-            .put("authenticatedSub", principal.getAuthenticatedSub())
-            .put("authenticatedOrgId", principal.getAuthenticatedOrgId())
-            .put("isApp", principal.isApp())
-            .put("isDelegation", principal.isDelegation())
-            .put("isDirectUser", principal.isDirectUser())
-            .put("appId", principal.getAppId())
-            .put("authorizationRoles", roles)
-            .put("auditRoles", auditRoles)
-            .put("directScopes", new JsonArray(new ArrayList<>(principal.getDirectScopes())));
-    ctx.response()
-        .putHeader("content-type", "application/json")
-        .setStatusCode(200)
-        .end(body.encodePrettily());
-  }
-
-  /** Utility for building standardized error responses. */
-  public static String errorResponse(HttpStatusCode code, URNGenerator urnGenerator) {
-    String urn = urnGenerator.generateUrn(code.getPath());
-    return new JsonObject()
-        .put("type", urn)
-        .put("title", code.getDescription())
-        .put("detail", code.getDescription())
-        .toString();
   }
 }
