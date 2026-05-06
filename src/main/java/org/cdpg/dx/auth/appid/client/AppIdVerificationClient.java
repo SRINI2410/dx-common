@@ -34,8 +34,8 @@ public class AppIdVerificationClient {
 
   public AppIdVerificationClient(String host, int port) {
     this.channel =
-        ManagedChannelBuilder.forAddress(host, port)
-            .usePlaintext() // OQ3 resolved: all services on same Kubernetes cluster — TLS handled at mesh/ingress level
+        ManagedChannelBuilder.forTarget("dns:///" + host + ":" + port)
+            .usePlaintext()
             .keepAliveTime(30, TimeUnit.SECONDS)
             .build();
     this.asyncStub = AppIdVerificationServiceGrpc.newStub(this.channel);
