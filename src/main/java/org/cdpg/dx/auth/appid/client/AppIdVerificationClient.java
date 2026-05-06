@@ -1,10 +1,11 @@
 package org.cdpg.dx.auth.appid.client;
 
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -34,7 +35,7 @@ public class AppIdVerificationClient {
 
   public AppIdVerificationClient(String host, int port) {
     this.channel =
-        ManagedChannelBuilder.forTarget("dns:///" + host + ":" + port)
+        NettyChannelBuilder.forAddress(new InetSocketAddress(host, port))
             .usePlaintext()
             .keepAliveTime(30, TimeUnit.SECONDS)
             .build();
@@ -75,13 +76,15 @@ public class AppIdVerificationClient {
   }
 
   /**
-   * Sends a CheckItemAccess RPC to dx-controlplane.
-   * Called after credentials are already verified (userId from VerifyAppId response).
+   * Sends a CheckItemAccess RPC to dx-controlplane. Called after credentials are already verified
+   * (userId from VerifyAppId response).
    *
-   * @param userId  userId (sub) from the VerifyAppId principal — no extra DB lookup on controlplane side
-   * @param did     delegate ID from the {@code did} HTTP header; empty string means no delegation
+   * @param userId userId (sub) from the VerifyAppId principal — no extra DB lookup on controlplane
+   *     side
+   * @param did delegate ID from the {@code did} HTTP header; empty string means no delegation
    */
-  public Future<CheckItemAccessResponse> checkItemAccess(String userId, String entityId, String did) {
+  public Future<CheckItemAccessResponse> checkItemAccess(
+      String userId, String entityId, String did) {
     Promise<CheckItemAccessResponse> promise = Promise.promise();
     asyncStub.checkItemAccess(
         CheckItemAccessRequest.newBuilder()
@@ -97,7 +100,12 @@ public class AppIdVerificationClient {
 
           @Override
           public void onError(Throwable t) {
-            LOGGER.error("gRPC CheckItemAccess failed userId={} entityId={} did={}: {}", userId, entityId, did, t.getMessage());
+            LOGGER.error(
+                "gRPC CheckItemAccess failed userId={} entityId={} did={}: {}",
+                userId,
+                entityId,
+                did,
+                t.getMessage());
             promise.fail(t);
           }
 
